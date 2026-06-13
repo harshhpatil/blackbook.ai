@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { projects, projectIntelligence, reportPlans } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { connectDB } from "@/db";
+import { Project, ProjectIntelligence, ReportPlan } from "@/db/schema";
 import { generateReportPlan } from "@/lib/ai/intelligence";
 
 export const dynamic = "force-dynamic";
@@ -11,22 +10,15 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await connectDB();
     const { id } = await params;
-    const projectId = parseInt(id);
 
-    const [project] = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.id, projectId));
-
+    const project = await Project.findById(id).lean();
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
-    const [intelligence] = await db
-      .select()
-      .from(projectIntelligence)
-      .where(eq(projectIntelligence.projectId, projectId));
+    const intelligence = await ProjectIntelligence.findOne({ projectId: id }).lean();
 
     if (!intelligence) {
       return NextResponse.json(
@@ -49,12 +41,12 @@ export async function POST(
       summary: intelligence.summary || "",
     };
 
-    const plan = await generateReportPlan(projectId, project.name, intelData);
+    const plan = await generateReportPlan(id, project.name, intelData);
 
-    await db
-      .update(projects)
-      .set({ status: "generating", updatedAt: new Date() })
-      .where(eq(projects.id, projectId));
+    await Project.findByIdAndUpdate(id, {
+      status: "generating",
+      updatedAt: new Date(),
+    });
 
     return NextResponse.json({ data: plan });
   } catch (error) {
@@ -71,13 +63,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await connectDB();
     const { id } = await params;
-    const projectId = parseInt(id);
 
-    const [plan] = await db
-      .select()
-      .from(reportPlans)
-      .where(eq(reportPlans.projectId, projectId));
+    const plan = await ReportPlan.findOne({ projectId: id }).lean();
 
     if (!plan) {
       return NextResponse.json(

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { projects, projectFiles } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { connectDB } from "@/db";
+import { Project, ProjectFile } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -12,14 +11,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await connectDB();
     const { id } = await params;
-    const projectId = parseInt(id);
 
-    const [project] = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.id, projectId));
-
+    const project = await Project.findById(id);
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
@@ -32,34 +27,33 @@ export async function POST(
     }
 
     // Update project status
-    await db
-      .update(projects)
-      .set({ status: "extracting", updatedAt: new Date() })
-      .where(eq(projects.id, projectId));
+    await Project.findByIdAndUpdate(id, {
+      status: "extracting",
+      updatedAt: new Date(),
+    });
 
     const uploadedFiles = [];
     for (const file of files) {
       const buffer = Buffer.from(await file.arrayBuffer());
       const ext = file.name.split(".").pop()?.toLowerCase() || "";
-      
-      let fileType: string = "txt";
-      if (["pdf"].includes(ext)) fileType = "pdf";
-      else if (["docx"].includes(ext)) fileType = "docx";
-      else if (["pptx"].includes(ext)) fileType = "pptx";
-      else if (["txt"].includes(ext)) fileType = "txt";
-      else if (["md"].includes(ext)) fileType = "markdown";
-      else if (["zip"].includes(ext)) fileType = "zip";
-      else if (["png", "jpg", "jpeg", "gif", "webp"].includes(ext)) fileType = "image";
-      else if (["sql"].includes(ext)) fileType = "sql";
+
+      const fileType: "pdf" | "docx" | "pptx" | "txt" | "markdown" | "zip" | "image" | "sql" | "github" =
+        ["pdf"].includes(ext) ? "pdf" :
+        ["docx"].includes(ext) ? "docx" :
+        ["pptx"].includes(ext) ? "pptx" :
+        ["txt"].includes(ext) ? "txt" :
+        ["md"].includes(ext) ? "markdown" :
+        ["zip"].includes(ext) ? "zip" :
+        ["png", "jpg", "jpeg", "gif", "webp"].includes(ext) ? "image" :
+        ["sql"].includes(ext) ? "sql" :
+        "txt";
 
       // Store file metadata and extract text content
       let extractedContent = "";
 
       try {
         // Basic text extraction for text-based files
-        if (fileType === "txt" || fileType === "markdown") {
-          extractedContent = buffer.toString("utf-8");
-        } else if (fileType === "sql") {
+        if (fileType === "txt" || fileType === "markdown" || fileType === "sql") {
           extractedContent = buffer.toString("utf-8");
         } else {
           // For binary files, store a note about file type
@@ -69,22 +63,19 @@ export async function POST(
         extractedContent = `[Error extracting content from ${file.name}]`;
       }
 
-      const [dbFile] = await db
-        .insert(projectFiles)
-        .values({
-          projectId,
-          fileName: file.name,
-          fileType: fileType as any,
-          fileSize: file.size,
-          extractedContent,
-          metadata: {
-            mimeType: file.type,
-            extension: ext,
-          },
-        })
-        .returning();
+      const dbFile = await ProjectFile.create({
+        projectId: id,
+        fileName: file.name,
+        fileType,
+        fileSize: file.size,
+        extractedContent,
+        metadata: {
+          mimeType: file.type,
+          extension: ext,
+        },
+      });
 
-      uploadedFiles.push(dbFile);
+      uploadedFiles.push(dbFile.toObject());
     }
 
     return NextResponse.json({ data: uploadedFiles }, { status: 201 });

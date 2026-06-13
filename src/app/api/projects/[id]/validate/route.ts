@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { projects, chapters, projectIntelligence } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { connectDB } from "@/db";
+import { Project, Chapter, ProjectIntelligence } from "@/db/schema";
 import { validateChapter } from "@/lib/ai/intelligence";
 
 export const dynamic = "force-dynamic";
@@ -11,13 +10,10 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await connectDB();
     const { id } = await params;
-    const projectId = parseInt(id);
 
-    const [intel] = await db
-      .select()
-      .from(projectIntelligence)
-      .where(eq(projectIntelligence.projectId, projectId));
+    const intel = await ProjectIntelligence.findOne({ projectId: id }).lean();
 
     if (!intel) {
       return NextResponse.json({ error: "No intelligence found" }, { status: 400 });
@@ -37,11 +33,9 @@ export async function POST(
       summary: intel.summary || "",
     };
 
-    const chapterList = await db
-      .select()
-      .from(chapters)
-      .where(eq(chapters.projectId, projectId))
-      .orderBy(chapters.number);
+    const chapterList = await Chapter.find({ projectId: id })
+      .sort({ number: 1 })
+      .lean();
 
     const results = [];
     let allPassed = true;
@@ -51,7 +45,7 @@ export async function POST(
       if (chapter.content) {
         const validation = await validateChapter(chapter.content, intelData);
         results.push({
-          chapterId: chapter.id,
+          chapterId: chapter._id.toString(),
           title: chapter.title,
           ...validation,
         });
@@ -62,13 +56,10 @@ export async function POST(
 
     const averageScore = chapterList.length > 0 ? totalScore / chapterList.length : 0;
 
-    await db
-      .update(projects)
-      .set({
-        status: allPassed ? "completed" : "generating",
-        updatedAt: new Date(),
-      })
-      .where(eq(projects.id, projectId));
+    await Project.findByIdAndUpdate(id, {
+      status: allPassed ? "completed" : "generating",
+      updatedAt: new Date(),
+    });
 
     return NextResponse.json({
       data: {

@@ -1,371 +1,554 @@
-import {
-  pgTable,
-  serial,
-  text,
-  varchar,
-  jsonb,
-  integer,
-  boolean,
-  timestamp,
-  pgEnum,
-} from "drizzle-orm/pg-core";
-import { relations } from "drizzle-orm";
+import mongoose, { Schema, Document, Model } from "mongoose";
 
-// ─── Enums ───────────────────────────────────────────────
+// ─── User ─────────────────────────────────────────────────
 
-export const userRoleEnum = pgEnum("user_role", ["user", "admin", "institute_admin"]);
-export const projectStatusEnum = pgEnum("project_status", [
-  "draft",
-  "uploading",
-  "extracting",
-  "analyzing",
-  "planning",
-  "generating",
-  "validating",
-  "completed",
-  "failed",
-]);
-export const fileTypeEnum = pgEnum("file_type", [
-  "pdf",
-  "docx",
-  "pptx",
-  "txt",
-  "markdown",
-  "zip",
-  "image",
-  "sql",
-  "github",
-]);
-export const nodeTypeEnum = pgEnum("node_type", [
-  "project",
-  "feature",
-  "module",
-  "database_entity",
-  "user_role",
-  "screen",
-  "technology",
-  "workflow",
-  "algorithm",
-]);
-export const chapterStatusEnum = pgEnum("chapter_status", [
-  "pending",
-  "generating",
-  "completed",
-  "failed",
-]);
-export const planTypeEnum = pgEnum("plan_type", ["free", "pro", "institute"]);
-export const subscriptionStatusEnum = pgEnum("subscription_status", [
-  "active",
-  "expired",
-  "cancelled",
-  "trialing",
-]);
-export const exportFormatEnum = pgEnum("export_format", ["docx", "pdf"]);
-export const exportStatusEnum = pgEnum("export_status", [
-  "pending",
-  "generating",
-  "completed",
-  "failed",
-]);
+export interface IUser extends Document {
+  clerkId: string;
+  email: string;
+  name?: string;
+  avatar?: string;
+  role: "user" | "admin" | "institute_admin";
+  createdAt: Date;
+  updatedAt: Date;
+}
 
-// ─── Tables ──────────────────────────────────────────────
-
-export const users = pgTable("users", {
-  id: serial("id").primaryKey(),
-  clerkId: varchar("clerk_id", { length: 255 }).unique().notNull(),
-  email: varchar("email", { length: 255 }).notNull(),
-  name: varchar("name", { length: 255 }),
-  avatar: text("avatar"),
-  role: userRoleEnum("role").default("user").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
-
-export const projects = pgTable("projects", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id")
-    .references(() => users.id, { onDelete: "cascade" })
-    .notNull(),
-  name: varchar("name", { length: 255 }).notNull(),
-  type: varchar("type", { length: 100 }).notNull().default("blackbook"),
-  branch: varchar("branch", { length: 100 }),
-  semester: varchar("semester", { length: 20 }),
-  academicYear: varchar("academic_year", { length: 50 }),
-  guideName: varchar("guide_name", { length: 255 }),
-  collegeName: varchar("college_name", { length: 255 }),
-  teamMembers: jsonb("team_members").default([]),
-  description: text("description"),
-  status: projectStatusEnum("status").default("draft").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
-
-export const projectFiles = pgTable("project_files", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id")
-    .references(() => projects.id, { onDelete: "cascade" })
-    .notNull(),
-  fileName: varchar("file_name", { length: 255 }).notNull(),
-  fileType: fileTypeEnum("file_type").notNull(),
-  fileSize: integer("file_size"),
-  storagePath: text("storage_path"),
-  extractedContent: text("extracted_content"),
-  metadata: jsonb("metadata").default({}),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const projectIntelligence = pgTable("project_intelligence", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id")
-    .references(() => projects.id, { onDelete: "cascade" })
-    .notNull()
-    .unique(),
-  problemStatement: text("problem_statement"),
-  objectives: jsonb("objectives").default([]),
-  features: jsonb("features").default([]),
-  modules: jsonb("modules").default([]),
-  users: jsonb("users").default([]),
-  workflows: jsonb("workflows").default([]),
-  technologyStack: jsonb("technology_stack").default([]),
-  databaseEntities: jsonb("database_entities").default([]),
-  algorithms: jsonb("algorithms").default([]),
-  screens: jsonb("screens").default([]),
-  summary: text("summary"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
-
-export const knowledgeGraphNodes = pgTable("knowledge_graph_nodes", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id")
-    .references(() => projects.id, { onDelete: "cascade" })
-    .notNull(),
-  type: nodeTypeEnum("type").notNull(),
-  label: varchar("label", { length: 255 }).notNull(),
-  properties: jsonb("properties").default({}),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const knowledgeGraphEdges = pgTable("knowledge_graph_edges", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id")
-    .references(() => projects.id, { onDelete: "cascade" })
-    .notNull(),
-  sourceNodeId: integer("source_node_id")
-    .references(() => knowledgeGraphNodes.id, { onDelete: "cascade" })
-    .notNull(),
-  targetNodeId: integer("target_node_id")
-    .references(() => knowledgeGraphNodes.id, { onDelete: "cascade" })
-    .notNull(),
-  relationship: varchar("relationship", { length: 255 }).notNull(),
-  properties: jsonb("properties").default({}),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const reportPlans = pgTable("report_plans", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id")
-    .references(() => projects.id, { onDelete: "cascade" })
-    .notNull()
-    .unique(),
-  chapters: jsonb("chapters").default([]),
-  totalPages: integer("total_pages").default(0),
-  status: varchar("status", { length: 50 }).default("draft"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
-
-export const chapters = pgTable("chapters", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id")
-    .references(() => projects.id, { onDelete: "cascade" })
-    .notNull(),
-  reportPlanId: integer("report_plan_id")
-    .references(() => reportPlans.id, { onDelete: "cascade" })
-    .notNull(),
-  title: varchar("title", { length: 255 }).notNull(),
-  number: integer("number").notNull(),
-  content: text("content"),
-  wordCount: integer("word_count").default(0),
-  status: chapterStatusEnum("status").default("pending").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
-
-export const chapterVersions = pgTable("chapter_versions", {
-  id: serial("id").primaryKey(),
-  chapterId: integer("chapter_id")
-    .references(() => chapters.id, { onDelete: "cascade" })
-    .notNull(),
-  content: text("content").notNull(),
-  wordCount: integer("word_count").default(0),
-  version: integer("version").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const templates = pgTable("templates", {
-  id: serial("id").primaryKey(),
-  name: varchar("name", { length: 255 }).notNull(),
-  description: text("description"),
-  type: varchar("type", { length: 100 }).notNull().default("msbte_standard"),
-  structure: jsonb("structure").default({}),
-  pages: jsonb("pages").default([]),
-  isPublic: boolean("is_public").default(true),
-  createdBy: integer("created_by").references(() => users.id),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
-
-export const templateVersions = pgTable("template_versions", {
-  id: serial("id").primaryKey(),
-  templateId: integer("template_id")
-    .references(() => templates.id, { onDelete: "cascade" })
-    .notNull(),
-  structure: jsonb("structure").default({}),
-  version: integer("version").notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const exports = pgTable("exports", {
-  id: serial("id").primaryKey(),
-  projectId: integer("project_id")
-    .references(() => projects.id, { onDelete: "cascade" })
-    .notNull(),
-  userId: integer("user_id")
-    .references(() => users.id, { onDelete: "cascade" })
-    .notNull(),
-  format: exportFormatEnum("format").notNull(),
-  status: exportStatusEnum("status").default("pending").notNull(),
-  filePath: text("file_path"),
-  error: text("error"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const payments = pgTable("payments", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id")
-    .references(() => users.id, { onDelete: "cascade" })
-    .notNull(),
-  amount: integer("amount").notNull(),
-  currency: varchar("currency", { length: 10 }).default("inr").notNull(),
-  status: varchar("status", { length: 50 }).default("pending"),
-  stripeId: varchar("stripe_id", { length: 255 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const subscriptions = pgTable("subscriptions", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id")
-    .references(() => users.id, { onDelete: "cascade" })
-    .notNull()
-    .unique(),
-  plan: planTypeEnum("plan").default("free").notNull(),
-  status: subscriptionStatusEnum("status").default("trialing").notNull(),
-  startsAt: timestamp("starts_at").defaultNow().notNull(),
-  endsAt: timestamp("ends_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const analyticsEvents = pgTable("analytics_events", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id").references(() => users.id, { onDelete: "set null" }),
-  event: varchar("event", { length: 255 }).notNull(),
-  properties: jsonb("properties").default({}),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const institutes = pgTable("institutes", {
-  id: serial("id").primaryKey(),
-  name: varchar("name", { length: 255 }).notNull(),
-  code: varchar("code", { length: 50 }).unique(),
-  address: text("address"),
-  city: varchar("city", { length: 100 }),
-  state: varchar("state", { length: 100 }),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const reviews = pgTable("reviews", {
-  id: serial("id").primaryKey(),
-  userId: integer("user_id")
-    .references(() => users.id, { onDelete: "cascade" })
-    .notNull(),
-  projectId: integer("project_id")
-    .references(() => projects.id, { onDelete: "cascade" })
-    .notNull(),
-  rating: integer("rating"),
-  comment: text("comment"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-// ─── Relations ───────────────────────────────────────────
-
-export const usersRelations = relations(users, ({ many }) => ({
-  projects: many(projects),
-  exports: many(exports),
-  payments: many(payments),
-  subscription: many(subscriptions),
-  reviews: many(reviews),
-}));
-
-export const projectsRelations = relations(projects, ({ one, many }) => ({
-  user: one(users, { fields: [projects.userId], references: [users.id] }),
-  files: many(projectFiles),
-  intelligence: one(projectIntelligence),
-  graphNodes: many(knowledgeGraphNodes),
-  graphEdges: many(knowledgeGraphEdges),
-  reportPlan: one(reportPlans),
-  chapters: many(chapters),
-  exports: many(exports),
-}));
-
-export const projectFilesRelations = relations(projectFiles, ({ one }) => ({
-  project: one(projects, {
-    fields: [projectFiles.projectId],
-    references: [projects.id],
-  }),
-}));
-
-export const knowledgeGraphNodesRelations = relations(
-  knowledgeGraphNodes,
-  ({ one, many }) => ({
-    project: one(projects, {
-      fields: [knowledgeGraphNodes.projectId],
-      references: [projects.id],
-    }),
-    outgoingEdges: many(knowledgeGraphEdges, {
-      relationName: "source",
-    }),
-    incomingEdges: many(knowledgeGraphEdges, {
-      relationName: "target",
-    }),
-  })
+const userSchema = new Schema<IUser>(
+  {
+    clerkId: { type: String, required: true, unique: true },
+    email: { type: String, required: true },
+    name: { type: String },
+    avatar: { type: String },
+    role: {
+      type: String,
+      enum: ["user", "admin", "institute_admin"],
+      default: "user",
+    },
+  },
+  { timestamps: true }
 );
 
-export const knowledgeGraphEdgesRelations = relations(
-  knowledgeGraphEdges,
-  ({ one }) => ({
-    project: one(projects, {
-      fields: [knowledgeGraphEdges.projectId],
-      references: [projects.id],
-    }),
-    sourceNode: one(knowledgeGraphNodes, {
-      fields: [knowledgeGraphEdges.sourceNodeId],
-      references: [knowledgeGraphNodes.id],
-      relationName: "source",
-    }),
-    targetNode: one(knowledgeGraphNodes, {
-      fields: [knowledgeGraphEdges.targetNodeId],
-      references: [knowledgeGraphNodes.id],
-      relationName: "target",
-    }),
-  })
+export const User: Model<IUser> =
+  mongoose.models.User || mongoose.model<IUser>("User", userSchema);
+
+// ─── Project ───────────────────────────────────────────────
+
+export type ProjectStatus =
+  | "draft"
+  | "uploading"
+  | "extracting"
+  | "analyzing"
+  | "planning"
+  | "generating"
+  | "validating"
+  | "completed"
+  | "failed";
+
+export interface IProject extends Document {
+  userId: mongoose.Types.ObjectId;
+  name: string;
+  type: string;
+  branch?: string;
+  semester?: string;
+  academicYear?: string;
+  guideName?: string;
+  collegeName?: string;
+  teamMembers: string[];
+  description?: string;
+  status: ProjectStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const projectSchema = new Schema<IProject>(
+  {
+    userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+    name: { type: String, required: true },
+    type: { type: String, default: "blackbook" },
+    branch: { type: String },
+    semester: { type: String },
+    academicYear: { type: String },
+    guideName: { type: String },
+    collegeName: { type: String },
+    teamMembers: { type: [String], default: [] },
+    description: { type: String },
+    status: {
+      type: String,
+      enum: [
+        "draft",
+        "uploading",
+        "extracting",
+        "analyzing",
+        "planning",
+        "generating",
+        "validating",
+        "completed",
+        "failed",
+      ],
+      default: "draft",
+    },
+  },
+  { timestamps: true }
 );
 
-export const chaptersRelations = relations(chapters, ({ one, many }) => ({
-  project: one(projects, { fields: [chapters.projectId], references: [projects.id] }),
-  reportPlan: one(reportPlans, {
-    fields: [chapters.reportPlanId],
-    references: [reportPlans.id],
-  }),
-  versions: many(chapterVersions),
-}));
+export const Project: Model<IProject> =
+  mongoose.models.Project || mongoose.model<IProject>("Project", projectSchema);
+
+// ─── Project File ──────────────────────────────────────────
+
+export type FileType = "pdf" | "docx" | "pptx" | "txt" | "markdown" | "zip" | "image" | "sql" | "github";
+
+export interface IProjectFile extends Document {
+  projectId: mongoose.Types.ObjectId;
+  fileName: string;
+  fileType: FileType;
+  fileSize?: number;
+  storagePath?: string;
+  extractedContent?: string;
+  metadata: Record<string, unknown>;
+  createdAt: Date;
+}
+
+const projectFileSchema = new Schema<IProjectFile>({
+  projectId: { type: Schema.Types.ObjectId, ref: "Project", required: true, index: true },
+  fileName: { type: String, required: true },
+  fileType: {
+    type: String,
+    enum: ["pdf", "docx", "pptx", "txt", "markdown", "zip", "image", "sql", "github"],
+    required: true,
+  },
+  fileSize: { type: Number },
+  storagePath: { type: String },
+  extractedContent: { type: String },
+  metadata: { type: Schema.Types.Mixed, default: {} },
+  createdAt: { type: Date, default: Date.now },
+});
+
+export const ProjectFile: Model<IProjectFile> =
+  mongoose.models.ProjectFile || mongoose.model<IProjectFile>("ProjectFile", projectFileSchema);
+
+// ─── Project Intelligence ─────────────────────────────────
+
+export interface IProjectIntelligence extends Document {
+  projectId: mongoose.Types.ObjectId;
+  problemStatement?: string;
+  objectives: string[];
+  features: string[];
+  modules: string[];
+  users: string[];
+  workflows: string[];
+  technologyStack: string[];
+  databaseEntities: string[];
+  algorithms: string[];
+  screens: string[];
+  summary?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const projectIntelligenceSchema = new Schema<IProjectIntelligence>(
+  {
+    projectId: {
+      type: Schema.Types.ObjectId,
+      ref: "Project",
+      required: true,
+      unique: true,
+      index: true,
+    },
+    problemStatement: { type: String },
+    objectives: { type: [String], default: [] },
+    features: { type: [String], default: [] },
+    modules: { type: [String], default: [] },
+    users: { type: [String], default: [] },
+    workflows: { type: [String], default: [] },
+    technologyStack: { type: [String], default: [] },
+    databaseEntities: { type: [String], default: [] },
+    algorithms: { type: [String], default: [] },
+    screens: { type: [String], default: [] },
+    summary: { type: String },
+  },
+  { timestamps: true }
+);
+
+export const ProjectIntelligence: Model<IProjectIntelligence> =
+  mongoose.models.ProjectIntelligence ||
+  mongoose.model<IProjectIntelligence>("ProjectIntelligence", projectIntelligenceSchema);
+
+// ─── Knowledge Graph Node ─────────────────────────────────
+
+export type NodeType =
+  | "project"
+  | "feature"
+  | "module"
+  | "database_entity"
+  | "user_role"
+  | "screen"
+  | "technology"
+  | "workflow"
+  | "algorithm";
+
+export interface IKnowledgeGraphNode extends Document {
+  projectId: mongoose.Types.ObjectId;
+  type: NodeType;
+  label: string;
+  properties: Record<string, unknown>;
+  createdAt: Date;
+}
+
+const knowledgeGraphNodeSchema = new Schema<IKnowledgeGraphNode>({
+  projectId: { type: Schema.Types.ObjectId, ref: "Project", required: true, index: true },
+  type: {
+    type: String,
+    enum: ["project", "feature", "module", "database_entity", "user_role", "screen", "technology", "workflow", "algorithm"],
+    required: true,
+  },
+  label: { type: String, required: true },
+  properties: { type: Schema.Types.Mixed, default: {} },
+  createdAt: { type: Date, default: Date.now },
+});
+
+export const KnowledgeGraphNode: Model<IKnowledgeGraphNode> =
+  mongoose.models.KnowledgeGraphNode ||
+  mongoose.model<IKnowledgeGraphNode>("KnowledgeGraphNode", knowledgeGraphNodeSchema);
+
+// ─── Knowledge Graph Edge ─────────────────────────────────
+
+export interface IKnowledgeGraphEdge extends Document {
+  projectId: mongoose.Types.ObjectId;
+  sourceNodeId: mongoose.Types.ObjectId;
+  targetNodeId: mongoose.Types.ObjectId;
+  relationship: string;
+  properties: Record<string, unknown>;
+  createdAt: Date;
+}
+
+const knowledgeGraphEdgeSchema = new Schema<IKnowledgeGraphEdge>({
+  projectId: { type: Schema.Types.ObjectId, ref: "Project", required: true, index: true },
+  sourceNodeId: {
+    type: Schema.Types.ObjectId,
+    ref: "KnowledgeGraphNode",
+    required: true,
+  },
+  targetNodeId: {
+    type: Schema.Types.ObjectId,
+    ref: "KnowledgeGraphNode",
+    required: true,
+  },
+  relationship: { type: String, required: true },
+  properties: { type: Schema.Types.Mixed, default: {} },
+  createdAt: { type: Date, default: Date.now },
+});
+
+export const KnowledgeGraphEdge: Model<IKnowledgeGraphEdge> =
+  mongoose.models.KnowledgeGraphEdge ||
+  mongoose.model<IKnowledgeGraphEdge>("KnowledgeGraphEdge", knowledgeGraphEdgeSchema);
+
+// ─── Report Plan ──────────────────────────────────────────
+
+export interface IReportPlan extends Document {
+  projectId: mongoose.Types.ObjectId;
+  chapters: Array<{
+    title: string;
+    number: number;
+    targetPages: number;
+    description: string;
+    dependencies: string[];
+  }>;
+  totalPages: number;
+  status: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const reportPlanSchema = new Schema<IReportPlan>(
+  {
+    projectId: {
+      type: Schema.Types.ObjectId,
+      ref: "Project",
+      required: true,
+      unique: true,
+      index: true,
+    },
+    chapters: {
+      type: [
+        {
+          title: String,
+          number: Number,
+          targetPages: Number,
+          description: String,
+          dependencies: [String],
+        },
+      ],
+      default: [],
+    },
+    totalPages: { type: Number, default: 0 },
+    status: { type: String, default: "draft" },
+  },
+  { timestamps: true }
+);
+
+export const ReportPlan: Model<IReportPlan> =
+  mongoose.models.ReportPlan || mongoose.model<IReportPlan>("ReportPlan", reportPlanSchema);
+
+// ─── Chapter ───────────────────────────────────────────────
+
+export type ChapterStatus = "pending" | "generating" | "completed" | "failed";
+
+export interface IChapter extends Document {
+  projectId: mongoose.Types.ObjectId;
+  reportPlanId: mongoose.Types.ObjectId;
+  title: string;
+  number: number;
+  content?: string;
+  wordCount: number;
+  status: ChapterStatus;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const chapterSchema = new Schema<IChapter>(
+  {
+    projectId: { type: Schema.Types.ObjectId, ref: "Project", required: true, index: true },
+    reportPlanId: { type: Schema.Types.ObjectId, ref: "ReportPlan", required: true },
+    title: { type: String, required: true },
+    number: { type: Number, required: true },
+    content: { type: String },
+    wordCount: { type: Number, default: 0 },
+    status: {
+      type: String,
+      enum: ["pending", "generating", "completed", "failed"],
+      default: "pending",
+    },
+  },
+  { timestamps: true }
+);
+
+export const Chapter: Model<IChapter> =
+  mongoose.models.Chapter || mongoose.model<IChapter>("Chapter", chapterSchema);
+
+// ─── Chapter Version ───────────────────────────────────────
+
+export interface IChapterVersion extends Document {
+  chapterId: mongoose.Types.ObjectId;
+  content: string;
+  wordCount: number;
+  version: number;
+  createdAt: Date;
+}
+
+const chapterVersionSchema = new Schema<IChapterVersion>({
+  chapterId: { type: Schema.Types.ObjectId, ref: "Chapter", required: true, index: true },
+  content: { type: String, required: true },
+  wordCount: { type: Number, default: 0 },
+  version: { type: Number, required: true },
+  createdAt: { type: Date, default: Date.now },
+});
+
+export const ChapterVersion: Model<IChapterVersion> =
+  mongoose.models.ChapterVersion ||
+  mongoose.model<IChapterVersion>("ChapterVersion", chapterVersionSchema);
+
+// ─── Template ──────────────────────────────────────────────
+
+export interface ITemplate extends Document {
+  name: string;
+  description?: string;
+  type: string;
+  structure: Record<string, unknown>;
+  pages: unknown[];
+  isPublic: boolean;
+  createdBy?: mongoose.Types.ObjectId;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const templateSchema = new Schema<ITemplate>(
+  {
+    name: { type: String, required: true },
+    description: { type: String },
+    type: { type: String, default: "msbte_standard" },
+    structure: { type: Schema.Types.Mixed, default: {} },
+    pages: { type: [], default: [] },
+    isPublic: { type: Boolean, default: true },
+    createdBy: { type: Schema.Types.ObjectId, ref: "User" },
+  },
+  { timestamps: true }
+);
+
+export const Template: Model<ITemplate> =
+  mongoose.models.Template || mongoose.model<ITemplate>("Template", templateSchema);
+
+// ─── Template Version ──────────────────────────────────────
+
+export interface ITemplateVersion extends Document {
+  templateId: mongoose.Types.ObjectId;
+  structure: Record<string, unknown>;
+  version: number;
+  createdAt: Date;
+}
+
+const templateVersionSchema = new Schema<ITemplateVersion>({
+  templateId: { type: Schema.Types.ObjectId, ref: "Template", required: true, index: true },
+  structure: { type: Schema.Types.Mixed, default: {} },
+  version: { type: Number, required: true },
+  createdAt: { type: Date, default: Date.now },
+});
+
+export const TemplateVersion: Model<ITemplateVersion> =
+  mongoose.models.TemplateVersion ||
+  mongoose.model<ITemplateVersion>("TemplateVersion", templateVersionSchema);
+
+// ─── Export ────────────────────────────────────────────────
+
+export type ExportFormat = "docx" | "pdf";
+export type ExportStatus = "pending" | "generating" | "completed" | "failed";
+
+export interface IExport extends Document {
+  projectId: mongoose.Types.ObjectId;
+  userId: mongoose.Types.ObjectId;
+  format: ExportFormat;
+  status: ExportStatus;
+  filePath?: string;
+  error?: string;
+  createdAt: Date;
+}
+
+const exportSchema = new Schema<IExport>({
+  projectId: { type: Schema.Types.ObjectId, ref: "Project", required: true, index: true },
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  format: { type: String, enum: ["docx", "pdf"], required: true },
+  status: {
+    type: String,
+    enum: ["pending", "generating", "completed", "failed"],
+    default: "pending",
+  },
+  filePath: { type: String },
+  error: { type: String },
+  createdAt: { type: Date, default: Date.now },
+});
+
+export const Export: Model<IExport> =
+  mongoose.models.Export || mongoose.model<IExport>("Export", exportSchema);
+
+// ─── Payment ───────────────────────────────────────────────
+
+export interface IPayment extends Document {
+  userId: mongoose.Types.ObjectId;
+  amount: number;
+  currency: string;
+  status: string;
+  stripeId?: string;
+  createdAt: Date;
+}
+
+const paymentSchema = new Schema<IPayment>({
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true, index: true },
+  amount: { type: Number, required: true },
+  currency: { type: String, default: "inr" },
+  status: { type: String, default: "pending" },
+  stripeId: { type: String },
+  createdAt: { type: Date, default: Date.now },
+});
+
+export const Payment: Model<IPayment> =
+  mongoose.models.Payment || mongoose.model<IPayment>("Payment", paymentSchema);
+
+// ─── Subscription ──────────────────────────────────────────
+
+export type PlanType = "free" | "pro" | "institute";
+export type SubscriptionStatus = "active" | "expired" | "cancelled" | "trialing";
+
+export interface ISubscription extends Document {
+  userId: mongoose.Types.ObjectId;
+  plan: PlanType;
+  status: SubscriptionStatus;
+  startsAt: Date;
+  endsAt?: Date;
+  createdAt: Date;
+}
+
+const subscriptionSchema = new Schema<ISubscription>({
+  userId: {
+    type: Schema.Types.ObjectId,
+    ref: "User",
+    required: true,
+    unique: true,
+    index: true,
+  },
+  plan: { type: String, enum: ["free", "pro", "institute"], default: "free" },
+  status: {
+    type: String,
+    enum: ["active", "expired", "cancelled", "trialing"],
+    default: "trialing",
+  },
+  startsAt: { type: Date, default: Date.now },
+  endsAt: { type: Date },
+  createdAt: { type: Date, default: Date.now },
+});
+
+export const Subscription: Model<ISubscription> =
+  mongoose.models.Subscription ||
+  mongoose.model<ISubscription>("Subscription", subscriptionSchema);
+
+// ─── Analytics Event ───────────────────────────────────────
+
+export interface IAnalyticsEvent extends Document {
+  userId?: mongoose.Types.ObjectId;
+  event: string;
+  properties: Record<string, unknown>;
+  createdAt: Date;
+}
+
+const analyticsEventSchema = new Schema<IAnalyticsEvent>({
+  userId: { type: Schema.Types.ObjectId, ref: "User", index: true },
+  event: { type: String, required: true },
+  properties: { type: Schema.Types.Mixed, default: {} },
+  createdAt: { type: Date, default: Date.now },
+});
+
+export const AnalyticsEvent: Model<IAnalyticsEvent> =
+  mongoose.models.AnalyticsEvent ||
+  mongoose.model<IAnalyticsEvent>("AnalyticsEvent", analyticsEventSchema);
+
+// ─── Institute ─────────────────────────────────────────────
+
+export interface IInstitute extends Document {
+  name: string;
+  code?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  createdAt: Date;
+}
+
+const instituteSchema = new Schema<IInstitute>({
+  name: { type: String, required: true },
+  code: { type: String, unique: true, sparse: true },
+  address: { type: String },
+  city: { type: String },
+  state: { type: String },
+  createdAt: { type: Date, default: Date.now },
+});
+
+export const Institute: Model<IInstitute> =
+  mongoose.models.Institute || mongoose.model<IInstitute>("Institute", instituteSchema);
+
+// ─── Review ────────────────────────────────────────────────
+
+export interface IReview extends Document {
+  userId: mongoose.Types.ObjectId;
+  projectId: mongoose.Types.ObjectId;
+  rating?: number;
+  comment?: string;
+  createdAt: Date;
+}
+
+const reviewSchema = new Schema<IReview>({
+  userId: { type: Schema.Types.ObjectId, ref: "User", required: true },
+  projectId: { type: Schema.Types.ObjectId, ref: "Project", required: true },
+  rating: { type: Number },
+  comment: { type: String },
+  createdAt: { type: Date, default: Date.now },
+});
+
+export const Review: Model<IReview> =
+  mongoose.models.Review || mongoose.model<IReview>("Review", reviewSchema);

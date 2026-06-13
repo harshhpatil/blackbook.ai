@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { projects, chapters, exports } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { connectDB } from "@/db";
+import { Project, Chapter, Export } from "@/db/schema";
+import mongoose from "mongoose";
 
 export const dynamic = "force-dynamic";
 
@@ -11,14 +11,12 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await connectDB();
     const { id } = await params;
-    const projectId = parseInt(id);
 
-    const exportList = await db
-      .select()
-      .from(exports)
-      .where(eq(exports.projectId, projectId))
-      .orderBy(exports.createdAt);
+    const exportList = await Export.find({ projectId: id })
+      .sort({ createdAt: -1 })
+      .lean();
 
     return NextResponse.json({ data: exportList });
   } catch (error) {
@@ -36,8 +34,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await connectDB();
     const { id } = await params;
-    const projectId = parseInt(id);
     const body = await request.json();
     const { userId, format } = body;
 
@@ -48,27 +46,23 @@ export async function POST(
       );
     }
 
-    const [existingExport] = await db
-      .insert(exports)
-      .values({
-        projectId,
-        userId,
-        format,
-        status: "generating",
-      })
-      .returning();
+    const existingExport = await Export.create({
+      projectId: id,
+      userId,
+      format,
+      status: "generating",
+    });
 
     // In production, queue the export generation job
     // For now, mark as completed
-    await db
-      .update(exports)
-      .set({
-        status: "completed",
-        filePath: `/api/exports/${existingExport.id}/download`,
-      })
-      .where(eq(exports.id, existingExport.id));
+    await Export.findByIdAndUpdate(existingExport._id, {
+      status: "completed",
+      filePath: `/api/exports/${existingExport._id}/download`,
+    });
 
-    return NextResponse.json({ data: { ...existingExport, status: "completed" } });
+    return NextResponse.json({
+      data: { ...existingExport.toObject(), status: "completed" },
+    });
   } catch (error) {
     console.error("Error creating export:", error);
     return NextResponse.json(

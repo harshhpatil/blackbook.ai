@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/db";
-import { projects, projectFiles, projectIntelligence } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import { connectDB } from "@/db";
+import { Project, ProjectFile, ProjectIntelligence } from "@/db/schema";
 import { extractProjectIntelligence, buildKnowledgeGraph } from "@/lib/ai/intelligence";
 
 export const dynamic = "force-dynamic";
@@ -12,29 +11,22 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await connectDB();
     const { id } = await params;
-    const projectId = parseInt(id);
 
-    const [project] = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.id, projectId));
-
+    const project = await Project.findById(id);
     if (!project) {
       return NextResponse.json({ error: "Project not found" }, { status: 404 });
     }
 
     // Update status
-    await db
-      .update(projects)
-      .set({ status: "analyzing", updatedAt: new Date() })
-      .where(eq(projects.id, projectId));
+    await Project.findByIdAndUpdate(id, {
+      status: "analyzing",
+      updatedAt: new Date(),
+    });
 
     // Collect all extracted content from files
-    const files = await db
-      .select()
-      .from(projectFiles)
-      .where(eq(projectFiles.projectId, projectId));
+    const files = await ProjectFile.find({ projectId: id }).lean();
 
     const allContent = files
       .map((f) => `--- ${f.fileName} ---\n${f.extractedContent || ""}`)
@@ -48,16 +40,16 @@ export async function POST(
     }
 
     // Extract intelligence
-    const intelligence = await extractProjectIntelligence(projectId, allContent);
+    const intelligence = await extractProjectIntelligence(id, allContent);
 
     // Build knowledge graph
-    await buildKnowledgeGraph(projectId, project.name, intelligence);
+    await buildKnowledgeGraph(id, project.name, intelligence);
 
     // Update project status
-    await db
-      .update(projects)
-      .set({ status: "planning", updatedAt: new Date() })
-      .where(eq(projects.id, projectId));
+    await Project.findByIdAndUpdate(id, {
+      status: "planning",
+      updatedAt: new Date(),
+    });
 
     return NextResponse.json({ data: intelligence });
   } catch (error) {
@@ -75,13 +67,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await connectDB();
     const { id } = await params;
-    const projectId = parseInt(id);
 
-    const [intelligence] = await db
-      .select()
-      .from(projectIntelligence)
-      .where(eq(projectIntelligence.projectId, projectId));
+    const intelligence = await ProjectIntelligence.findOne({ projectId: id }).lean();
 
     if (!intelligence) {
       return NextResponse.json(
@@ -106,15 +95,22 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await connectDB();
     const { id } = await params;
-    const projectId = parseInt(id);
     const body = await request.json();
 
-    const [updated] = await db
-      .update(projectIntelligence)
-      .set({ ...body, updatedAt: new Date() })
-      .where(eq(projectIntelligence.projectId, projectId))
-      .returning();
+    const updated = await ProjectIntelligence.findOneAndUpdate(
+      { projectId: id },
+      { ...body, updatedAt: new Date() },
+      { new: true }
+    ).lean();
+
+    if (!updated) {
+      return NextResponse.json(
+        { error: "Intelligence not found" },
+        { status: 404 }
+      );
+    }
 
     return NextResponse.json({ data: updated });
   } catch (error) {

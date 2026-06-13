@@ -1,14 +1,13 @@
-import { db } from "@/db";
+import { connectDB } from "@/db";
 import {
-  projects,
-  projectFiles,
-  projectIntelligence,
-  knowledgeGraphNodes,
-  knowledgeGraphEdges,
-  reportPlans,
-  chapters,
+  Project,
+  ProjectFile,
+  ProjectIntelligence,
+  KnowledgeGraphNode,
+  KnowledgeGraphEdge,
+  ReportPlan,
+  Chapter,
 } from "@/db/schema";
-import { eq } from "drizzle-orm";
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
@@ -19,14 +18,10 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await connectDB();
     const { id } = await params;
-    const projectId = parseInt(id);
 
-    const [project] = await db
-      .select()
-      .from(projects)
-      .where(eq(projects.id, projectId));
-
+    const project = await Project.findById(id).lean();
     if (!project) {
       return NextResponse.json(
         { error: "Project not found" },
@@ -34,36 +29,15 @@ export async function GET(
       );
     }
 
-    const files = await db
-      .select()
-      .from(projectFiles)
-      .where(eq(projectFiles.projectId, projectId));
-
-    const [intelligence] = await db
-      .select()
-      .from(projectIntelligence)
-      .where(eq(projectIntelligence.projectId, projectId));
-
-    const nodes = await db
-      .select()
-      .from(knowledgeGraphNodes)
-      .where(eq(knowledgeGraphNodes.projectId, projectId));
-
-    const edges = await db
-      .select()
-      .from(knowledgeGraphEdges)
-      .where(eq(knowledgeGraphEdges.projectId, projectId));
-
-    const [plan] = await db
-      .select()
-      .from(reportPlans)
-      .where(eq(reportPlans.projectId, projectId));
-
-    const chapterList = await db
-      .select()
-      .from(chapters)
-      .where(eq(chapters.projectId, projectId))
-      .orderBy(chapters.number);
+    const [files, intelligence, nodes, edges, plan, chapterList] =
+      await Promise.all([
+        ProjectFile.find({ projectId: id }).lean(),
+        ProjectIntelligence.findOne({ projectId: id }).lean(),
+        KnowledgeGraphNode.find({ projectId: id }).lean(),
+        KnowledgeGraphEdge.find({ projectId: id }).lean(),
+        ReportPlan.findOne({ projectId: id }).lean(),
+        Chapter.find({ projectId: id }).sort({ number: 1 }).lean(),
+      ]);
 
     return NextResponse.json({
       data: {
@@ -90,18 +64,22 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await connectDB();
     const { id } = await params;
-    const projectId = parseInt(id);
     const body = await request.json();
 
-    const [updated] = await db
-      .update(projects)
-      .set({
-        ...body,
-        updatedAt: new Date(),
-      })
-      .where(eq(projects.id, projectId))
-      .returning();
+    const updated = await Project.findByIdAndUpdate(
+      id,
+      { ...body, updatedAt: new Date() },
+      { new: true }
+    ).lean();
+
+    if (!updated) {
+      return NextResponse.json(
+        { error: "Project not found" },
+        { status: 404 }
+      );
+    }
 
     return NextResponse.json({ data: updated });
   } catch (error) {
@@ -113,16 +91,32 @@ export async function PATCH(
   }
 }
 
-// DELETE /api/projects/[id] - Delete project
+// DELETE /api/projects/[id] - Delete project (cascading handled by application)
 export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    await connectDB();
     const { id } = await params;
-    const projectId = parseInt(id);
 
-    await db.delete(projects).where(eq(projects.id, projectId));
+    const project = await Project.findByIdAndDelete(id);
+    if (!project) {
+      return NextResponse.json(
+        { error: "Project not found" },
+        { status: 404 }
+      );
+    }
+
+    // Clean up related documents
+    await Promise.all([
+      ProjectFile.deleteMany({ projectId: id }),
+      ProjectIntelligence.deleteOne({ projectId: id }),
+      KnowledgeGraphNode.deleteMany({ projectId: id }),
+      KnowledgeGraphEdge.deleteMany({ projectId: id }),
+      ReportPlan.deleteOne({ projectId: id }),
+      Chapter.deleteMany({ projectId: id }),
+    ]);
 
     return NextResponse.json({ success: true });
   } catch (error) {
