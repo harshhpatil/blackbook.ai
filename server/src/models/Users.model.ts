@@ -59,11 +59,10 @@ const UserSchema: Schema<IUser> = new Schema(
 UserSchema.pre<IUser>('save', async function (next: any) {
   // hashing the password if it is modified or new
   if (!this.isModified('password') || !this.password) {
-    return next();
+    return;
   }
 
   this.password = await bcrypt.hash(this.password, 13);
-  next();
 });
 
 // instance method to compare the password with the hashed password

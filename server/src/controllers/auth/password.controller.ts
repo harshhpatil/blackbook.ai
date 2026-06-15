@@ -1,10 +1,12 @@
 import { Request, Response, NextFunction } from 'express';
-import crypto from 'node:crypto';
 import { User } from '../../models/Users.model.ts';
 import { Session } from '../../models/Session.model.ts';
-import { generatePasswordResetToken } from '../../services/token.service.js';
-import { queuePasswordResetEmail } from '../../services/email.queue.service.js';
-import { authCookieOptions, AuthError, recordAudit } from './auth.helpers.js';
+import {
+  generatePasswordResetToken,
+  verifyToken,
+} from '../../services/token.service.ts';
+import { queuePasswordResetEmail } from '../../services/emailQueue.service.ts';
+import { authCookieOptions, AuthError, recordAudit } from './auth.helpers.ts';
 
 // function to change the password of the logged in user by validating the current password, updating the password and revoking all active sessions
 export async function changePassword(
@@ -127,25 +129,43 @@ export async function resetPassword(
 ): Promise<void | Response> {
   try {
     // extracting the reset token and new password from the request body and validating them
-    const { token, newPassword } = req.body;
+    const { token: bodyToken, newPassword } = req.body;
+    const queryToken = req.query.token;
 
+    // determining the source of the reset token, either from the request body or query parameters, and trimming any whitespace
+    const tokenSource =
+      typeof bodyToken === 'string'
+        ? bodyToken
+        : typeof queryToken === 'string'
+          ? queryToken
+          : '';
+    const token = tokenSource.trim();
+
+    // returning an error response if the reset token or new password is not provided in the request
     if (!token || !newPassword) {
       return res
         .status(400)
-        .json({ message: 'Token and new password are required' });
+        .json({ message: 'token and new password are required' });
     }
 
-    // hashing the reset token and finding the user in the database with the hashed token and validating its expiry time
-    const hashedResetToken = crypto
-      .createHash('sha256')
-      .update(token)
-      .digest('hex');
-
-    // finding the user in the database with the hashed token and validating its expiry time
-    const user = await User.findOne({
-      passwordResetToken: hashedResetToken,
+    // finding the user in the database with an active reset token and validating it against the provided token
+    const candidates = await User.find({
+      passwordResetToken: { $exists: true, $ne: null },
       passwordResetTokenExpiry: { $gt: new Date() },
     });
+
+    let user = null;
+    for (const candidate of candidates) {
+      if (!candidate.passwordResetToken) {
+        continue;
+      }
+
+      const isValid = await verifyToken(token, candidate.passwordResetToken);
+      if (isValid) {
+        user = candidate;
+        break;
+      }
+    }
 
     if (!user) {
       return res

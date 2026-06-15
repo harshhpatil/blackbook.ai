@@ -1,5 +1,4 @@
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 
@@ -35,7 +34,7 @@ export function generateAccessToken(payload: any): string {
 export function generateRefreshToken(): string {
   return crypto.randomUUID(); // returning a random UUID as the refresh token
 }
-
+ 
 // function to generate hashed token
 export function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex'); // returning hashed token using sha256
@@ -46,7 +45,7 @@ export async function verifyToken(
   token: string,
   hashedToken: string
 ): Promise<boolean> {
-  return bcrypt.compare(token, hashedToken); // returning true if the token matches the hashed token, otherwise false
+  return hashToken(token) === hashedToken; // returning true if the token matches the hashed token, otherwise false
 }
 
 // function to generate password reset token

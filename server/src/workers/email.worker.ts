@@ -1,4 +1,4 @@
-import { Worker, Job, ConnectionOptions } from 'bullmq';
+import { Worker, Job } from 'bullmq';
 import { redisConnection } from '../config/redisConnection.ts';
 import {
   sendVerificationEmail,
@@ -8,22 +8,22 @@ import {
 
 // Initialize the Worker
 export const emailWorker = new Worker(
-  'email-queue', // Must match the Queue name exactly
+  'emailQueue', // Must match the Queue name exactly
   async (job: Job) => {
     const { name, data } = job;
 
     switch (name) {
-      case 'send-verification':
+      case 'send-verification-email':
         console.log(` Processing verification email for ${data.email}...`);
         await sendVerificationEmail(data.email, data.link);
         break;
 
-      case 'send-welcome':
+      case 'send-welcome-email':
         console.log(` Processing welcome email for ${data.email}...`);
         await sendWelcomeEmail(data.email);
         break;
 
-      case 'send-password-reset':
+      case 'send-password-reset-email':
         console.log(` Processing password reset email for ${data.email}...`);
         await sendPasswordResetEmail(data.email, data.link);
         break;
@@ -33,7 +33,7 @@ export const emailWorker = new Worker(
     }
   },
   {
-    connection: redisConnection as ConnectionOptions,
+    connection: redisConnection as any, // Ensure this matches your Redis connection configuration
     concurrency: 5, // Process up to 5 emails simultaneously
   }
 );

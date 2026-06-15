@@ -11,7 +11,7 @@ export const authCookieOptions: CookieOptions = {
   sameSite: isProduction ? 'none' : 'lax',
   path: '/',
 };
-
+ 
 // defining the interface to log the audit events
 interface RecordAuditParams {
   user: mongoose.Types.ObjectId | string;

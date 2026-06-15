@@ -6,7 +6,7 @@ import { AuthError, recordAudit } from './auth.helpers.js';
 import {
   queueWelcomeEmail,
   queueVerificationEmail,
-} from ''; // Assuming you have typed this!
+} from '../../services/emailQueue.service.ts'; // Assuming you have typed this!
 
 // function to register users
 export async function register(
@@ -51,7 +51,7 @@ export async function register(
         500
       );
     }
-    const verificationLink = `${baseUrl}/v1/api/auth/verify-email?token=${encodeURIComponent(emailVerificationToken)}&email=${normalizedEmail}`;
+    const verificationLink = `${baseUrl}/api/v1/auth/verify-email?token=${emailVerificationToken}`;
 
     await queueVerificationEmail(normalizedEmail, verificationLink);
     await recordAudit({
@@ -63,33 +63,38 @@ export async function register(
 
     // returning success response
     res.status(201).json({
-        message:
+      message:
         'User registered successfully. Please check your email to verify your account.',
     });
-} catch (err) {
+  } catch (err) {
     next(err);
-}
+  }
 }
 
 // function to send welcome email to the user after email verification
-export async function welcomeEmail(req: Request, res: Response, next: NextFunction): Promise<void | Response> {
+export async function welcomeEmail(
+  req: Request,
+  res: Response,
+  next: NextFunction
+): Promise<void | Response> {
   try {
     const userId = req.params.userId;
     if (!userId) {
-      return res.status(400).json({ message: "User ID is required" });
+      return res.status(400).json({ message: 'User ID is required' });
     }
 
     const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) return res.status(404).json({ message: 'User not found' });
 
     if (!user.isEmailVerified) {
       return res.status(403).json({
-        message: "Email not verified. Please verify your email to receive welcome email.",
+        message:
+          'Email not verified. Please verify your email to receive welcome email.',
       });
     }
 
     await queueWelcomeEmail(user.email);
-    return res.status(200).json({ message: "Welcome email sent successfully" });
+    return res.status(200).json({ message: 'Welcome email sent successfully' });
   } catch (err) {
     return next(err);
   }
@@ -151,7 +156,9 @@ export async function verifyEmail(
     });
 
     // returning success response
-    res.status(200).json({ message: 'email verified successfully, you can now login..!!' });
+    res
+      .status(200)
+      .json({ message: 'email verified successfully, you can now login..!!' });
   } catch (err) {
     next(err);
   }

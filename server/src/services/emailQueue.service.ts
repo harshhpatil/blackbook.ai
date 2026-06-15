@@ -12,7 +12,7 @@ export async function queueVerificationEmail(
   verificationLink: string
 ): Promise<void> {
   await emailQueue.add(
-    'sendVerificationEmail',
+    'send-verification-email',
     {
       email,
       link: verificationLink,
@@ -31,7 +31,7 @@ export async function queueVerificationEmail(
 // function to add a job to the queue for sending welcome email
 export async function queueWelcomeEmail(email: string): Promise<void> {
   await emailQueue.add(
-    'sendWelcomeEmail',
+    'send-welcome-email',
     {
       email,
     }, // job payload
@@ -52,7 +52,7 @@ export async function queuePasswordResetEmail(
   resetLink: string
 ): Promise<void> {
   await emailQueue.add(
-    'sendPasswordResetEmail',
+    'send-password-reset-email',
     {
       email,
       link: resetLink,

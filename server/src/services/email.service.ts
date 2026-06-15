@@ -1,12 +1,15 @@
-import transporter from "../utils/email.js";
+import transporter from '../utils/email.ts';
 
 // function to send verification email
-export const sendVerificationEmail = async (email: string, verificationLink: string): Promise<void> => {
+export const sendVerificationEmail = async (
+  email: string,
+  verificationLink: string
+): Promise<void> => {
   try {
     await transporter.sendMail({
       from: `"Auth-System" <${process.env.EMAIL_USER}>`,
       to: email,
-      subject: "Verify Your Email Address",
+      subject: 'Verify Your Email Address',
       html: `
         <h2>Email Verification</h2>
         <p>Thank you for registering.</p>
@@ -18,18 +21,21 @@ export const sendVerificationEmail = async (email: string, verificationLink: str
       `,
     });
   } catch (error) {
-    console.error("error sending verification email:", error);
-    throw new Error("email could not be sent");
+    console.error('error sending verification email:', error);
+    throw new Error('email could not be sent');
   }
 };
 
 // function to send password reset email
-export const sendPasswordResetEmail = async (email: string, passwordResetLink: string): Promise<void> => {
+export const sendPasswordResetEmail = async (
+  email: string,
+  passwordResetLink: string
+): Promise<void> => {
   try {
     await transporter.sendMail({
       from: `"Auth-System" <${process.env.EMAIL_USER}>`,
       to: email,
-      subject: "Password Reset Request",
+      subject: 'Password Reset Request',
       html: `
         <h2>Password Reset</h2>
         <p>You requested to reset your password.</p>
@@ -41,18 +47,18 @@ export const sendPasswordResetEmail = async (email: string, passwordResetLink: s
         `,
     });
   } catch (err) {
-    console.error("error sending password reset email", err);
-    throw new Error("email could not be sent");
+    console.error('error sending password reset email', err);
+    throw new Error('email could not be sent');
   }
 };
 
-// function to send welcome email   
+// function to send welcome email
 export const sendWelcomeEmail = async (email: string): Promise<void> => {
   try {
     await transporter.sendMail({
       from: `"Your App Name" <${process.env.EMAIL_USER}>`,
       to: email,
-      subject: "Welcome to Our Platform 🎉",
+      subject: 'Welcome to Our Platform 🎉',
       html: `
         <h2>Welcome!</h2>
         <p>Your account has been successfully created.</p>
@@ -61,7 +67,7 @@ export const sendWelcomeEmail = async (email: string): Promise<void> => {
       `,
     });
   } catch (error) {
-    console.error("Error sending welcome email:", error);
-    throw new Error("Email could not be sent");
+    console.error('Error sending welcome email:', error);
+    throw new Error('Email could not be sent');
   }
 };
