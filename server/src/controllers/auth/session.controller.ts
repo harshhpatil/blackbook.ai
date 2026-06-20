@@ -5,7 +5,6 @@ import {
   generateAccessToken,
   generateRefreshToken,
   hashToken,
-  verifyToken,
 } from '../../services/token.service.js';
 import { authCookieOptions, recordAudit } from './auth.helpers.js';
 
@@ -13,7 +12,7 @@ import { authCookieOptions, recordAudit } from './auth.helpers.js';
 export async function refreshToken(
   req: Request,
   res: Response,
-  next: NextFunction
+  next: NextFunction,
 ): Promise<void | Response> {
   try {
     // extracting the refresh token from the cookies and validating it
@@ -21,22 +20,13 @@ export async function refreshToken(
     if (!refreshToken) return res.status(401).json({ message: 'unauthorized' });
 
     // finding the session associated with the provided refresh token
-    let matchedSession = null;
-    const sessions = await Session.find({
+    const refreshTokenHash = hashToken(refreshToken);
+
+    const matchedSession = await Session.findOne({
+      tokenHash: refreshTokenHash,
       revoked: false,
       expiresAt: { $gt: new Date() },
-    }).sort({ createdAt: -1 });
-
-    // iterating through the sessions to find the one that matches the provided refresh token
-    for (const session of sessions) {
-      if (session.tokenHash) {
-        const isMatch = await verifyToken(refreshToken, session.tokenHash);
-        if (isMatch) {
-          matchedSession = session;
-          break;
-        }
-      }
-    }
+    });
 
     // if no matching session is found, returning unauthorized response
     if (!matchedSession) {
@@ -57,16 +47,41 @@ export async function refreshToken(
     delete sanitizedUser.passwordResetToken;
     delete sanitizedUser.passwordResetTokenExpiry;
 
-    // generating new access token and refresh token, updating the session with the new refresh token hash and expiry time, and returning the new tokens in the cookies
-    const newAccessToken = generateAccessToken(sanitizedUser);
-
     const newRefreshToken = generateRefreshToken();
-    const newRefreshTokenHash = await hashToken(newRefreshToken);
+    const newRefreshTokenHash = hashToken(newRefreshToken);
 
-    matchedSession.tokenHash = newRefreshTokenHash;
-    matchedSession.expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-    matchedSession.revoked = false;
-    await matchedSession.save();
+    // Keep the old hash in the selector so only one concurrent refresh can win.
+    const updatedSession = await Session.findOneAndUpdate(
+      {
+        _id: matchedSession._id,
+
+        tokenHash: refreshTokenHash,
+        revoked: false,
+        expiresAt: { $gt: new Date() },
+      },
+      {
+        $set: {
+          tokenHash: newRefreshTokenHash,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+          revoked: false,
+        },
+      },
+      {
+        new: true,
+      },
+    );
+
+    // returning unauthorized response if the session was not updated, which can happen if the refresh token was already rotated or revoked
+    if (!updatedSession) {
+      return res.status(401).json({
+        message: 'refresh token already rotated',
+      });
+    }
+
+    const newAccessToken = generateAccessToken(
+      sanitizedUser as IUser,
+      updatedSession._id.toString()
+    );
 
     await recordAudit({
       user: matchedSession.user as any,
@@ -100,28 +115,20 @@ export async function logout(
     const { refreshToken } = req.cookies;
     if (!refreshToken) return res.status(401).json({ message: 'unauthorized' });
 
-    // finding the session associated with the provided refresh token and returning unauthorized response if no matching session is found
-    let matchedSession = null;
-    const sessions = await Session.find({ revoked: false })
-      .limit(100)
-      .select('_id tokenHash user');
-
-    for (const session of sessions) {
-      if (session.tokenHash) {
-        const isMatch = await verifyToken(refreshToken, session.tokenHash);
-        if (isMatch) {
-          matchedSession = session;
-          break;
-        }
-      }
-    }
+    const refreshTokenHash = hashToken(refreshToken);
+    const matchedSession = await Session.findOneAndUpdate(
+      {
+        tokenHash: refreshTokenHash,
+        revoked: false,
+        expiresAt: { $gt: new Date() },
+      },
+      { $set: { revoked: true } },
+      { new: true }
+    ).select('_id user');
 
     if (!matchedSession) {
       return res.status(401).json({ message: 'unauthorized' });
     }
-
-    matchedSession.revoked = true;
-    await matchedSession.save();
 
     // clearing the cookies and returning success response
     res.clearCookie('accessToken', authCookieOptions);
@@ -146,11 +153,15 @@ export async function getSessions(
 ): Promise<void | Response> {
   try {
     // extracting the user id from the request object and validating it
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     if (!userId) return res.status(401).json({ message: 'unauthorized' });
 
     // finding the user in the database and returning not found response if user does not exist
-    const sessions = await Session.find({ user: userId })
+    const sessions = await Session.find({
+      user: userId,
+      revoked: false,
+      expiresAt: { $gt: new Date() },
+    })
       .select('-tokenHash')
       .sort({ createdAt: -1 });
 
@@ -168,29 +179,20 @@ export async function logoutSession(
 ): Promise<void | Response> {
   try {
     // extracting the user id from the request object and session id from the request parameters, and validating them
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     const sessionId = req.params.sessionId;
 
     if (!userId) return res.status(401).json({ message: 'unauthorized' });
 
-    // finding the user in the database and returning not found response if user does not exist
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'user not found' });
-
-    // finding the session in the database and returning not found response if session does not exist
-    const session = await Session.findById(sessionId);
+    const session = await Session.findOneAndUpdate(
+      { _id: sessionId, user: userId, revoked: false },
+      { $set: { revoked: true } },
+      { new: true }
+    );
     if (!session) return res.status(404).json({ message: 'session not found' });
 
-    if (session.user.toString() !== userId.toString()) {
-      return res.status(403).json({ message: 'unauthorized' });
-    }
-
-    // revoking the session and returning success response
-    session.revoked = true;
-    await session.save();
-
     await recordAudit({
-      user: user._id as unknown as string,
+      user: userId,
       event: 'logout_session',
       req,
       meta: { sessionId },
@@ -210,7 +212,7 @@ export async function logoutAllSessions(
 ): Promise<void | Response> {
   try {
     // extracting the user id from the request object and validating it
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     if (!userId) return res.status(401).json({ message: 'unauthorized' });
 
     // finding the user in the database and returning not found response if user does not exist

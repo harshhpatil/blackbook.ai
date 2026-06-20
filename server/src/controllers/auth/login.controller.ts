@@ -53,19 +53,23 @@ export async function login(
     delete sanitizedUser.passwordResetToken;
     delete sanitizedUser.passwordResetTokenExpiry;
 
-    // generating the access token and refresh token
-    const accessToken = generateAccessToken(sanitizedUser);
+    // generating the refresh token and creating the backing session
     const refreshToken = generateRefreshToken();
-    const tokenHash = await hashToken(refreshToken);
+    const tokenHash = hashToken(refreshToken);
 
     // creating a secure session
-    await Session.create({
+    const session = await Session.create({
       user: sanitizedUser._id,
       tokenHash,
       expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // setting the session to expire in 7 days
       userAgent: req.headers['user-agent'],
       ip: req.ip,
     });
+
+    const accessToken = generateAccessToken(
+      sanitizedUser as IUser,
+      session._id.toString()
+    );
 
     // attaching the http-only cookies
     res.cookie('accessToken', accessToken, {

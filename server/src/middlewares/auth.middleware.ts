@@ -1,12 +1,15 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/Users.model.ts';
+import { Session } from '../models/Session.model.ts';
+import { env } from '../config/env.ts';
 
 // defining the structure of the jwt payload
 interface DecodedToken {
   userId: string;
   role: string;
   tokenVersion: number;
+  sessionId: string;
 }
 
 // authentication middleware to protect routes and ensure only authenticated users can access them
@@ -24,13 +27,25 @@ export const authenticate = async (
 
   try {
     // verifying the token and extracting the payload
-    const secret = process.env.JWT_SECRET;
-    if (!secret) throw new Error('JWT_SECRET is missing');
-
-    const decoded = jwt.verify(token, secret) as DecodedToken;
+    const decoded = jwt.verify(token, env.jwtSecret, {
+      algorithms: ['HS256'],
+      audience: env.jwtAudience,
+      issuer: env.jwtIssuer,
+    }) as DecodedToken;
     const user = await User.findById(decoded.userId);
 
     if (!user || user.tokenVersion !== decoded.tokenVersion) {
+      return res.status(403).json({ message: 'invalid or expired token' });
+    }
+
+    const session = await Session.findOne({
+      _id: decoded.sessionId,
+      user: user._id,
+      revoked: false,
+      expiresAt: { $gt: new Date() },
+    }).select('_id');
+
+    if (!session) {
       return res.status(403).json({ message: 'invalid or expired token' });
     }
 
@@ -38,6 +53,7 @@ export const authenticate = async (
     req.user = {
       id: user.id,
       role: user.role,
+      sessionId: session._id.toString(),
     };
 
     next();

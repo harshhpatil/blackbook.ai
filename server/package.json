@@ -2,10 +2,10 @@
   "name": "blackbook.ai-backend",
   "version": "0.0.2",
   "description": "",
-  "main": "index.js",
+  "main": "dist/index.js",
   "type": "module",
   "scripts": {
-    "start": "node ./src/index.ts",
+    "start": "node ./dist/index.js",
     "dev": "tsx watch ./src/index.ts",
     "build": "tsc",
     "worker": "tsx src/workers/run-worker.ts"

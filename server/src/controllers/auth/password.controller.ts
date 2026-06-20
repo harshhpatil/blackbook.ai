@@ -1,12 +1,18 @@
 import { Request, Response, NextFunction } from 'express';
-import { User } from '../../models/Users.model.ts';
+import mongoose from 'mongoose';
+import { IUser, User } from '../../models/Users.model.ts';
 import { Session } from '../../models/Session.model.ts';
+import { IEmailOutbox } from '../../models/EmailOutbox.model.ts';
 import {
   generatePasswordResetToken,
-  verifyToken,
+  hashToken,
 } from '../../services/token.service.ts';
-import { queuePasswordResetEmail } from '../../services/emailQueue.service.ts';
-import { authCookieOptions, AuthError, recordAudit } from './auth.helpers.ts';
+import {
+  createEmailOutboxEvent,
+  publishEmailOutboxEvent,
+} from '../../services/emailQueue.service.ts';
+import { authCookieOptions, recordAudit } from './auth.helpers.ts';
+import { env } from '../../config/env.ts';
 
 // function to change the password of the logged in user by validating the current password, updating the password and revoking all active sessions
 export async function changePassword(
@@ -16,7 +22,7 @@ export async function changePassword(
 ): Promise<void | Response> {
   try {
     // extracting the user id from the request object and validating it
-    const userId = (req as any).user?.id;
+    const userId = req.user?.id;
     if (!userId) {
       return res.status(401).json({ message: 'unauthorized' });
     }
@@ -44,22 +50,26 @@ export async function changePassword(
       });
     } // returning error if the new password is the same as the current password
 
-    // updating the password, incrementing the token version to invalidate all existing access tokens immediately, revoking all active sessions and clearing cookies for the current device
-    user.password = newPassword;
-    user.tokenVersion += 1;
+    const mongoSession = await mongoose.startSession();
+    await mongoSession.withTransaction(async () => {
+      // updating the password, incrementing the token version to invalidate all existing access tokens immediately, revoking all active sessions and clearing cookies for the current device
+      user.password = newPassword;
+      user.tokenVersion += 1;
 
-    // revoke all active database sessions
-    await Session.updateMany(
-      { user: user._id, revoked: false },
-      { revoked: true }
-    );
+      // revoke all active database sessions
+      await Session.updateMany(
+        { user: user._id, revoked: false },
+        { revoked: true },
+        { session: mongoSession }
+      );
+
+      await user.save({ session: mongoSession });
+    });
+    await mongoSession.endSession();
 
     // clear cookies for the current device
     res.clearCookie('accessToken', authCookieOptions);
     res.clearCookie('refreshToken', authCookieOptions);
-
-    await user.save();
-
     await recordAudit({
       user: user._id as unknown as string,
       event: 'change_password',
@@ -95,20 +105,32 @@ export async function forgotPassword(
 
     // generating a password reset token and its hashed version, creating a password reset link, saving the hashed token and its expiry time to the user's record, and sending the password reset email
     const { resetToken, hashedResetToken } = generatePasswordResetToken();
-    const baseURL = process.env.CLIENT_URL;
-
-    if (!baseURL) {
-      return next(new AuthError('reset URL not configured', 500));
-    }
+    const baseURL = env.clientUrl;
 
     // creating the password reset link using the reset token and the base URL
     const resetLink = `${baseURL}/reset-password?token=${encodeURIComponent(resetToken)}`;
-    user.passwordResetToken = hashedResetToken;
-    user.passwordResetTokenExpiry = new Date(Date.now() + 1 * 60 * 60 * 1000); // 1 hour expiry
-    await user.save();
+    const mongoSession = await mongoose.startSession();
+    let outboxEvent: IEmailOutbox | undefined;
+
+    await mongoSession.withTransaction(async () => {
+      user.passwordResetToken = hashedResetToken;
+      user.passwordResetTokenExpiry = new Date(Date.now() + 1 * 60 * 60 * 1000); // 1 hour expiry
+      await user.save({ session: mongoSession });
+
+      outboxEvent = await createEmailOutboxEvent(
+        'send-password-reset-email',
+        { email: user.email, link: resetLink },
+        mongoSession
+      );
+    });
+
+    await mongoSession.endSession();
 
     // queueing the password reset email to be sent to the user and recording the audit event
-    await queuePasswordResetEmail(user.email, resetLink);
+    if (outboxEvent) {
+      await publishEmailOutboxEvent(outboxEvent);
+    }
+
     await recordAudit({
       user: user._id as unknown as string,
       event: 'forgot_password',
@@ -148,46 +170,51 @@ export async function resetPassword(
         .json({ message: 'token and new password are required' });
     }
 
-    // finding the user in the database with an active reset token and validating it against the provided token
-    const candidates = await User.find({
-      passwordResetToken: { $exists: true, $ne: null },
-      passwordResetTokenExpiry: { $gt: new Date() },
+    const mongoSession = await mongoose.startSession();
+    let user: IUser | null = null;
+
+    await mongoSession.withTransaction(async () => {
+      // Atomically claim and clear the reset token before changing the password.
+      user = await User.findOneAndUpdate(
+        {
+          passwordResetToken: hashToken(token),
+          passwordResetTokenExpiry: { $gt: new Date() },
+        },
+        {
+          $unset: {
+            passwordResetToken: '',
+            passwordResetTokenExpiry: '',
+          },
+        },
+        { new: true, session: mongoSession }
+      ).select('+password');
+
+      if (!user) return;
+
+      // updating the password, clearing the reset token and its expiry time, incrementing the token version to invalidate all existing access tokens immediately, revoking all active sessions, and clearing cookies for the current device
+      user.password = newPassword;
+      user.tokenVersion += 1;
+
+      // Revoke active sessions
+      await Session.updateMany(
+        { user: user._id, revoked: false },
+        { revoked: true },
+        { session: mongoSession }
+      );
+      await user.save({ session: mongoSession });
     });
 
-    let user = null;
-    for (const candidate of candidates) {
-      if (!candidate.passwordResetToken) {
-        continue;
-      }
-
-      const isValid = await verifyToken(token, candidate.passwordResetToken);
-      if (isValid) {
-        user = candidate;
-        break;
-      }
-    }
+    await mongoSession.endSession();
 
     if (!user) {
       return res
         .status(400)
         .json({ message: 'Invalid or expired reset token' });
     }
-
-    // updating the password, clearing the reset token and its expiry time, incrementing the token version to invalidate all existing access tokens immediately, revoking all active sessions, and clearing cookies for the current device
-    user.password = newPassword;
-    user.passwordResetToken = undefined;
-    user.passwordResetTokenExpiry = undefined;
-    user.tokenVersion += 1;
-
-    // Revoke active sessions
-    await Session.updateMany(
-      { user: user._id, revoked: false },
-      { revoked: true }
-    );
-    await user.save();
+    const resetUser = user as IUser;
 
     await recordAudit({
-      user: user._id as unknown as string,
+      user: resetUser._id as unknown as string,
       event: 'reset_password',
       req,
     });

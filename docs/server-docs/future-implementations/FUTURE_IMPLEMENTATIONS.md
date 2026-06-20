@@ -1,129 +1,77 @@
 # Future Implementations
 
-This roadmap assumes the confirmed defects in `BACKEND_AUDIT_REPORT.md` are
-fixed before feature development. Complexity is relative to the current small
-backend: S (days), M (roughly one sprint), L (multiple sprints).
+This roadmap starts after the backend audit remediation pass. The API now has
+cookie auth, CSRF protection, session-bound JWTs, Redis-backed rate limiting,
+typed environment validation, Mongo-backed email outbox records, readiness
+checks, and graceful shutdown.
 
-## Prioritized Roadmap
+## P0: Frontend Integration
 
-| Priority | Initiative | Impact | Complexity |
-| --- | --- | --- | --- |
-| P0 | Fix build, error statuses, exposed secrets, CORS/CSRF, and refresh-token handling | Critical production readiness | M |
-| P0 | Add atomic token consumption/rotation and session indexes | Security and correctness | M |
-| P0 | Add auth integration tests and CI security gates | Regression prevention | M |
-| P1 | Typed configuration, DTOs, request augmentation, and job contracts | Reliability and maintainability | M |
-| P1 | Distributed rate limiting and abuse controls | Security and horizontal scaling | M |
-| P1 | Structured logs, metrics, tracing, and actionable alerts | Operability | M |
-| P1 | Idempotent email workflows and a dead-letter process | Delivery reliability | M |
-| P2 | Containerized deployment and managed secret/config integration | Repeatable operations | M |
-| P2 | Account recovery, verification resend, MFA, and security notifications | Product/security capability | L |
-| P2 | Session/device management improvements | User control | M |
-| P3 | Service decomposition only after measured load requires it | Long-term scale | L |
+- Build auth screens from the [Frontend Integration Guide](../frontend/FRONTEND_AUTH_INTEGRATION.md).
+- Add a small frontend API client that always sends `credentials: 'include'`.
+- Load and cache CSRF token on app startup.
+- Implement refresh-once retry behavior for authenticated calls.
+- Add session management UI using `GET /api/v1/auth/sessions`.
 
-## Security Enhancements
+## P1: Backend Test Coverage
 
-- Replace opaque global token scans with a selector token plus a verifier token,
-  or use a session ID in the refresh cookie and store a keyed HMAC of the secret.
-- Rotate refresh tokens with a single compare-and-update operation. Revoke a
-  token family when reuse is detected.
-- Require CSRF tokens or strict origin verification for cookie-authenticated
-  state changes. Keep `SameSite=Lax` where cross-site use is unnecessary.
-- Use explicit JWT algorithm, issuer, audience, key ID, and key rotation.
-- Validate minimum JWT secret strength and all URLs at startup.
-- Add account lockout/risk controls based on IP, account, device, and velocity.
-- Add MFA with TOTP or WebAuthn and recovery codes.
-- Add verified-email resend with cooldowns and invalidation of prior tokens.
-- Notify users about password changes, resets, and new-device logins.
-- Add optional breached-password screening and stronger password length rules.
-- Define account disable/delete behavior and ensure refresh blocks disabled users.
-- Redact secrets and personal data from logs and error telemetry.
-- Add Helmet, a strict frontend content-security policy, and dependency scanning.
+- Add route integration tests for register, verify, login, refresh, logout,
+  password change, forgot password, and reset password.
+- Add CSRF and CORS tests.
+- Add session-bound JWT revocation tests.
+- Add transaction/race tests for refresh, verify, reset, change password, and
+  logout-all.
+- Add worker/outbox tests for duplicate jobs, malformed jobs, retry, and failed
+  Redis/SMTP behavior.
 
-## Scalability and Performance
+## P1: API Contract Quality
 
-- Add a TTL index on `Session.expiresAt` and indexes matching active-session
-  queries, user session lists, and audit queries.
-- Store directly queryable token selectors; never scan all users or sessions.
-- Move rate-limit counters to Redis with environment-specific key prefixes.
-- Add queue limits, priorities, per-recipient throttles, and backpressure.
-- Keep API and worker autoscaling independent.
-- Use connection pooling limits and timeout budgets for MongoDB, Redis, and SMTP.
-- Paginate sessions and audit events.
-- Archive or expire old audit records according to a retention policy.
-- Cache only non-sensitive, measured hot paths; MongoDB remains authoritative.
-- Run load tests around login, refresh, forgot-password, and worker throughput.
+- Generate an OpenAPI document from the Express route contracts or maintain a
+  checked-in contract manually.
+- Keep the Requestly collection aligned with cookie auth and CSRF requirements.
+- Add response DTOs so controllers return predictable shapes.
+- Normalize response message casing before frontend polish.
 
-## Queue Reliability
+## P1: Delivery Reliability
 
-- Define a discriminated union for job names and payloads.
-- Validate job payloads at both enqueue and consume boundaries.
-- Use deterministic job IDs for one logical email event.
-- Record an email-delivery outbox event in the same MongoDB transaction as the
-  state change, then publish it asynchronously.
-- Make handlers idempotent and treat unknown job names as failures.
-- Add jittered retry policies, permanent/transient error classification, and a
-  dead-letter queue with an operator replay tool.
-- Record delivery state without storing reset or verification links.
-- Add graceful worker shutdown on both `SIGINT` and `SIGTERM`.
+- Add an outbox polling loop or scheduled worker pass rather than publishing
+  only on worker startup and immediate request completion.
+- Track email delivery state without storing raw reset or verification links.
+- Add a dead-letter inspection and replay tool for failed outbox events.
+- Add user-facing resend verification with cooldowns and neutral responses.
 
-## Refactoring Opportunities
+## P1: Observability
 
-- Introduce typed `AuthenticatedRequest`, request DTOs, response DTOs, token
-  claims, audit event enums, and BullMQ job types.
-- Derive DTO types from runtime schemas or adopt a schema library with static
-  inference to prevent Joi/runtime drift.
-- Replace controller-level database orchestration with focused auth, session,
-  password, and account services.
-- Centralize cookie names, lifetimes, token policies, and security options.
-- Create an application error hierarchy and a typed Express error handler.
-- Replace Mongoose `Document`-extended domain interfaces with inferred schema
-  types and explicit lean/read models where appropriate.
-- Remove dead exports such as the unrouted welcome-email controller or expose
-  them through a properly authorized use case.
-- Standardize `.js`/`.ts` import strategy and the production build target.
+- Add structured JSON logging with request IDs.
+- Redact emails, tokens, reset links, cookies, and provider error details.
+- Track route latency, auth failures, queue depth, outbox age, job failures, and
+  dependency readiness.
+- Alert on password-reset spikes, queue backlog, refresh replay failures, and
+  readiness failures.
 
-## Monitoring and Observability
+## P2: Security Features
 
-- Emit structured JSON logs with request IDs and secret redaction.
-- Track request latency/error rate by route and status.
-- Track authentication failures without logging passwords or tokens.
-- Export MongoDB/Redis connection, queue depth, job age, retry, failure, and SMTP
-  latency metrics.
-- Add distributed tracing from HTTP request to queued job using correlation IDs.
-- Alert on refresh-token reuse, password-reset spikes, queue backlog, dead-letter
-  growth, dependency outages, and audit-write failures.
-- Separate liveness from readiness and dependency diagnostics.
-- Define SLOs for API availability, auth latency, and email delivery time.
+- Add MFA using TOTP or WebAuthn.
+- Add security notifications for password changes, password resets, and new
+  device/session login.
+- Add optional breached-password screening.
+- Define account disable/delete behavior and enforce it in auth middleware.
+- Add Helmet and coordinate a frontend Content Security Policy.
 
-## Infrastructure Upgrades
+## P2: Deployment And Operations
 
-- Build API and worker containers from pinned lockfiles.
-- Add CI stages for formatting, linting, type-checking, tests, dependency audit,
-  secret scanning, and container scanning.
-- Use managed MongoDB and Redis with TLS, authentication, private networking,
-  backups, point-in-time recovery, and tested restore procedures.
-- Store secrets in the deployment platform's secret manager.
-- Apply least-privilege service identities and separate environments.
-- Add a reverse proxy/load balancer with TLS, request limits, and explicit trusted
-  proxy configuration.
-- Define infrastructure as code and repeatable index migrations.
+- Standardize on one package manager and one lockfile.
+- Add CI for build, lint, tests, dependency audit, and secret scanning.
+- Containerize API and worker processes.
+- Move secrets into a deployment secret manager.
+- Use managed MongoDB and Redis with TLS, backups, point-in-time recovery, and
+  tested restore procedures.
+- Run index creation/migration as a controlled deployment step.
 
-## Non-Breaking Feature Additions
+## P3: Product Improvements
 
-- Verification-email resend endpoint with neutral responses and cooldowns.
-- Current-session indicator and friendly device labels in session listings.
-- Security event history sourced from audit records.
-- Email notifications for sensitive account changes.
-- Admin-only health/readiness diagnostics protected by network policy.
-- User preference endpoints and notification opt-outs for non-security mail.
-- API version/deprecation headers and generated OpenAPI documentation.
+- Add current-session indicator and friendly device names.
+- Add security event history sourced from audit records.
+- Add user notification preferences for non-security email.
+- Add admin-only diagnostics behind network policy or admin auth.
 
-## Testing Strategy
-
-- Unit-test token, cookie, validation, and password helpers.
-- Integration-test every route with isolated MongoDB and Redis instances.
-- Add race tests for refresh, reset, verification, logout-all, and password change.
-- Add worker tests for retries, duplicate delivery, malformed jobs, and shutdown.
-- Add security tests for CSRF, CORS, rate-limit bypass, token replay, object
-  ownership, malformed JWTs, oversized input, and error leakage.
-- Add contract tests to keep the Requestly/OpenAPI collection aligned with the API.

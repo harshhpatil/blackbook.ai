@@ -1,14 +1,13 @@
 import { CookieOptions, Request } from 'express';
 import mongoose from 'mongoose';
 import { Audit } from '../../models/Audit.model.ts';
-
-const isProduction = process.env.NODE_ENV === 'production';
+import { env, isProduction } from '../../config/env.ts';
 
 // cookie options for setting the token's in the cookie
 export const authCookieOptions: CookieOptions = {
   httpOnly: true,
   secure: isProduction,
-  sameSite: isProduction ? 'none' : 'lax',
+  sameSite: isProduction && env.crossSiteCookies ? 'none' : 'lax',
   path: '/',
 };
  
@@ -35,16 +34,21 @@ export async function recordAudit({
       userAgent: req.headers['user-agent'],
       meta,
     });
-  } catch (err) {}
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'unknown audit error';
+    console.error('audit write failed', { message });
+  }
 }
 
 // typescript custom error class for handling the authentication errors
 export class AuthError extends Error {
     public statusCode: number;
+    public status: number;
 
     constructor(message: string, statusCode: number = 500) {
         super(message);
         this.statusCode = statusCode;
+        this.status = statusCode;
         
         Object.setPrototypeOf(this, AuthError.prototype);
     }

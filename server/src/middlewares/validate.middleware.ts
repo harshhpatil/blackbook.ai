@@ -5,7 +5,10 @@ import { Schema } from 'joi';
 const validate = (schema: Schema) => {
   return (req: Request, res: Response, next: NextFunction): void | Response => {
     // Validate request body, abortEarly: false collects ALL errors instead of stopping at the first one
-    const { error } = schema.validate(req.body, { abortEarly: false });
+    const { error, value } = schema.validate(req.body, {
+      abortEarly: false,
+      stripUnknown: true,
+    });
 
     if (error) {
       const errors = error.details.map((detail) => detail.message);
@@ -15,6 +18,7 @@ const validate = (schema: Schema) => {
       });
     }
 
+    req.body = value;
     next();
   };
 };

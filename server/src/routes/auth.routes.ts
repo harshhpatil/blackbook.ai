@@ -22,6 +22,10 @@ import {
   resetPasswordLimiter,
 } from '../middlewares/rateLimiter.middleware.ts';
 import { authenticate } from '../middlewares/auth.middleware.ts';
+import {
+  csrfProtection,
+  issueCsrfToken,
+} from '../middlewares/csrf.middleware.ts';
 import validate from '../middlewares/validate.middleware.ts';
 import {
   loginSchema,
@@ -46,32 +50,53 @@ const normalizeResetPasswordToken = (
 };
 
 // defining the auth routes
-router.post('/login', loginLimiter, validate(loginSchema), login);
-router.post('/register', registerLimiter, validate(registerSchema), register);
+router.get('/csrf-token', issueCsrfToken);
+
+router.post('/login', csrfProtection, loginLimiter, validate(loginSchema), login);
+router.post(
+  '/register',
+  csrfProtection,
+  registerLimiter,
+  validate(registerSchema),
+  register
+);
 router.post(
   '/change-password',
+  csrfProtection,
   changePasswordLimiter,
   authenticate,
   validate(changePasswordSchema),
   changePassword
 );
-router.post('/refresh-token', refreshTokenLimiter, refreshToken);
+router.post('/refresh-token', csrfProtection, refreshTokenLimiter, refreshToken);
 router.post(
   '/forgot-password',
+  csrfProtection,
   forgotPasswordLimiter,
   validate(forgotPasswordSchema),
   forgotPassword
 );
 router.post(
   '/reset-password',
+  csrfProtection,
   resetPasswordLimiter,
   normalizeResetPasswordToken,
   validate(resetPasswordSchema),
   resetPassword
 );
-router.post('/logout', authenticate, logout);
-router.post('/logout-all-sessions', authenticate, logoutAllSessions);
-router.post('/logout-session/:sessionId', authenticate, logoutSession);
+router.post('/logout', csrfProtection, authenticate, logout);
+router.post(
+  '/logout-all-sessions',
+  csrfProtection,
+  authenticate,
+  logoutAllSessions
+);
+router.post(
+  '/logout-session/:sessionId',
+  csrfProtection,
+  authenticate,
+  logoutSession
+);
 
 router.get('/sessions', authenticate, getSessions);
 router.get('/verify-email', verifyEmailLimiter, verifyEmail);

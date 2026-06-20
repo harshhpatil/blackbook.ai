@@ -1,4 +1,5 @@
 import transporter from '../utils/email.ts';
+import { env } from '../config/env.ts';
 
 // function to send verification email
 export const sendVerificationEmail = async (
@@ -7,7 +8,7 @@ export const sendVerificationEmail = async (
 ): Promise<void> => {
   try {
     await transporter.sendMail({
-      from: `"Auth-System" <${process.env.EMAIL_USER}>`,
+      from: `"Auth-System" <${env.emailFrom}>`,
       to: email,
       subject: 'Verify Your Email Address',
       html: `
@@ -33,7 +34,7 @@ export const sendPasswordResetEmail = async (
 ): Promise<void> => {
   try {
     await transporter.sendMail({
-      from: `"Auth-System" <${process.env.EMAIL_USER}>`,
+      from: `"Auth-System" <${env.emailFrom}>`,
       to: email,
       subject: 'Password Reset Request',
       html: `
@@ -56,7 +57,7 @@ export const sendPasswordResetEmail = async (
 export const sendWelcomeEmail = async (email: string): Promise<void> => {
   try {
     await transporter.sendMail({
-      from: `"Your App Name" <${process.env.EMAIL_USER}>`,
+      from: `"Your App Name" <${env.emailFrom}>`,
       to: email,
       subject: 'Welcome to Our Platform 🎉',
       html: `

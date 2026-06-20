@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'node:crypto';
 import mongoose from 'mongoose';
+import { env } from '../config/env.ts';
 
 // defining the exact shape of the payload expected by the token generator
 export interface ITokenPayload {
@@ -10,11 +11,10 @@ export interface ITokenPayload {
 }
 
 // function to generate the access token
-export function generateAccessToken(payload: any): string {
-  // checking if the JWT_SECRET is defined in the environment variables and payload is provided or not
-  if (!process.env.JWT_SECRET) {
-    throw new Error('JWT_SECRET is not defined in the environment variables');
-  }
+export function generateAccessToken(
+  payload: ITokenPayload,
+  sessionId: string
+): string {
   if (!payload) {
     throw new Error('user payload is required to generate the access token');
   }
@@ -22,11 +22,18 @@ export function generateAccessToken(payload: any): string {
   return jwt.sign(
     {
       userId: payload._id,
+      sub: payload._id.toString(),
       role: payload.role,
       tokenVersion: payload.tokenVersion,
+      sessionId,
     },
-    process.env.JWT_SECRET,
-    { expiresIn: '15m' }
+    env.jwtSecret,
+    {
+      algorithm: 'HS256',
+      audience: env.jwtAudience,
+      expiresIn: '15m',
+      issuer: env.jwtIssuer,
+    }
   );
 }
 
@@ -45,7 +52,14 @@ export async function verifyToken(
   token: string,
   hashedToken: string
 ): Promise<boolean> {
-  return hashToken(token) === hashedToken; // returning true if the token matches the hashed token, otherwise false
+  const tokenHash = hashToken(token);
+  const tokenHashBuffer = Buffer.from(tokenHash, 'hex');
+  const storedHashBuffer = Buffer.from(hashedToken, 'hex');
+
+  return (
+    tokenHashBuffer.length === storedHashBuffer.length &&
+    crypto.timingSafeEqual(tokenHashBuffer, storedHashBuffer)
+  );
 }
 
 // function to generate password reset token

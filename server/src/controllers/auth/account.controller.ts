@@ -1,12 +1,15 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'node:crypto';
-import { User } from '../../models/Users.model.ts';
-import { hashToken, verifyToken } from '../../services/token.service.js';
+import mongoose from 'mongoose';
+import { IUser, User } from '../../models/Users.model.ts';
+import { IEmailOutbox } from '../../models/EmailOutbox.model.ts';
+import { hashToken } from '../../services/token.service.js';
 import { AuthError, recordAudit } from './auth.helpers.js';
+import { env } from '../../config/env.ts';
 import {
-  queueWelcomeEmail,
-  queueVerificationEmail,
-} from '../../services/emailQueue.service.ts'; // Assuming you have typed this!
+  createEmailOutboxEvent,
+  publishEmailOutboxEvent,
+} from '../../services/emailQueue.service.ts';
 
 // function to register users
 export async function register(
@@ -23,39 +26,57 @@ export async function register(
 
     // normalizing the email and checking if the user with the same email already exists in the database
     const normalizedEmail = email.trim().toLowerCase();
-    const existingUser = await User.findOne({ email: normalizedEmail });
-    if (existingUser) {
-      throw new AuthError('email is already registered', 409);
-    }
+    const baseUrl = env.clientUrl;
 
     // generating email verification token and its expiry time
     const emailVerificationToken = crypto.randomBytes(32).toString('hex');
-    const emailVerificationTokenHash = await hashToken(emailVerificationToken);
+    const emailVerificationTokenHash = hashToken(emailVerificationToken);
     const tokenExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000); // token expires in 24 hours
 
-    // creating a new user in the database with the provided email, password and generated email verification token
-    const newUser = await User.create({
-      email: normalizedEmail,
-      password,
-      role: 'user',
-      emailVerificationToken: emailVerificationTokenHash,
-      emailVerificationTokenExpiry: tokenExpiry,
-      isEmailVerified: false,
+    const verificationLink = `${baseUrl}/api/v1/auth/verify-email?token=${emailVerificationToken}`;
+    const mongoSession = await mongoose.startSession();
+    let newUser: IUser | undefined;
+    let outboxEvent: IEmailOutbox | undefined;
+
+    await mongoSession.withTransaction(async () => {
+      const existingUser = await User.findOne({
+        email: normalizedEmail,
+      }).session(mongoSession);
+      if (existingUser) {
+        throw new AuthError('email is already registered', 409);
+      }
+
+      // creating a new user in the database with the provided email, password and generated email verification token
+      const createdUsers = await User.create(
+        [
+          {
+            email: normalizedEmail,
+            password,
+            role: 'user',
+            emailVerificationToken: emailVerificationTokenHash,
+            emailVerificationTokenExpiry: tokenExpiry,
+            isEmailVerified: false,
+          },
+        ],
+        { session: mongoSession }
+      );
+      newUser = createdUsers[0];
+
+      outboxEvent = await createEmailOutboxEvent(
+        'send-verification-email',
+        { email: normalizedEmail, link: verificationLink },
+        mongoSession
+      );
     });
 
-    // queueing the verification email to be sent to the user
-    const baseUrl = process.env.CLIENT_URL;
-    if (!baseUrl) {
-      throw new AuthError(
-        'CLIENT_URL is not defined in the environment variables',
-        500
-      );
-    }
-    const verificationLink = `${baseUrl}/api/v1/auth/verify-email?token=${emailVerificationToken}`;
+    await mongoSession.endSession();
 
-    await queueVerificationEmail(normalizedEmail, verificationLink);
+    if (outboxEvent) {
+      await publishEmailOutboxEvent(outboxEvent);
+    }
+
     await recordAudit({
-      user: newUser._id,
+      user: newUser!._id,
       event: 'user_registered',
       req,
       meta: { email: normalizedEmail },
@@ -66,37 +87,12 @@ export async function register(
       message:
         'User registered successfully. Please check your email to verify your account.',
     });
-  } catch (err) {
+  } catch (err: any) {
+    if (err?.code === 11000) {
+      return next(new AuthError('email is already registered', 409));
+    }
+
     next(err);
-  }
-}
-
-// function to send welcome email to the user after email verification
-export async function welcomeEmail(
-  req: Request,
-  res: Response,
-  next: NextFunction
-): Promise<void | Response> {
-  try {
-    const userId = req.params.userId;
-    if (!userId) {
-      return res.status(400).json({ message: 'User ID is required' });
-    }
-
-    const user = await User.findById(userId);
-    if (!user) return res.status(404).json({ message: 'User not found' });
-
-    if (!user.isEmailVerified) {
-      return res.status(403).json({
-        message:
-          'Email not verified. Please verify your email to receive welcome email.',
-      });
-    }
-
-    await queueWelcomeEmail(user.email);
-    return res.status(200).json({ message: 'Welcome email sent successfully' });
-  } catch (err) {
-    return next(err);
   }
 }
 
@@ -112,47 +108,57 @@ export async function verifyEmail(
       throw new AuthError('Verification token is required', 400);
     }
 
-    // finding the user with the provided email verification token and checking if the token is valid and not expired
-    const users = await User.find({
-      emailVerificationToken: { $exists: true, $ne: null },
-      emailVerificationTokenExpiry: { $gt: new Date() },
+    const tokenHash = hashToken(token);
+    const mongoSession = await mongoose.startSession();
+    let user: IUser | null = null;
+    let outboxEvent: IEmailOutbox | undefined;
+
+    await mongoSession.withTransaction(async () => {
+      // Atomically consume the verification token so concurrent requests cannot
+      // verify twice or enqueue duplicate welcome emails.
+      user = await User.findOneAndUpdate(
+        {
+          emailVerificationToken: tokenHash,
+          emailVerificationTokenExpiry: { $gt: new Date() },
+          isEmailVerified: false,
+        },
+        {
+          $set: { isEmailVerified: true },
+          $unset: {
+            emailVerificationToken: '',
+            emailVerificationTokenExpiry: '',
+          },
+        },
+        { new: true, session: mongoSession }
+      );
+
+      if (!user) return;
+
+      outboxEvent = await createEmailOutboxEvent(
+        'send-welcome-email',
+        { email: user.email },
+        mongoSession
+      );
     });
 
-    let user = null;
-    // finding the user whose email verification token matches the provided token and returning if not found
-    for (const candidate of users) {
-      // verifying the token by comparing the provided token with the hashed token stored in the database
-      if (candidate.emailVerificationToken) {
-        const isValid = await verifyToken(
-          token,
-          candidate.emailVerificationToken
-        );
-        if (isValid) {
-          user = candidate;
-          break;
-        }
-      }
-    }
+    await mongoSession.endSession();
 
     if (!user) {
       return res
         .status(400)
         .json({ message: 'Invalid or expired verification token' });
     }
+    const verifiedUser = user as IUser;
 
-    // marking the user's email as verified and clearing the email verification token and its expiry time
-    user.isEmailVerified = true;
-    user.emailVerificationToken = undefined;
-    user.emailVerificationTokenExpiry = undefined;
-    await user.save();
+    if (outboxEvent) {
+      await publishEmailOutboxEvent(outboxEvent);
+    }
 
-    // queing the welcome email to be sent to the user
-    await queueWelcomeEmail(user.email);
     await recordAudit({
-      user: user._id,
+      user: verifiedUser._id,
       event: 'email_verified',
       req,
-      meta: { email: user.email },
+      meta: { email: verifiedUser.email },
     });
 
     // returning success response

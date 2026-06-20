@@ -1,24 +1,20 @@
 import mongoose from 'mongoose';
+import { env } from './env.ts';
 
 export const dbConnection = async () => {
-  // checking if the db connection string is loaded properly or not
-  if (!process.env.MONGO_URI) {
-    console.error('MONGO_URI is not defined in environment variables.');
-    process.exit(1);
+  if (mongoose.connection.readyState === 1) {
+    console.log('mongodb is already connected.');
+    return;
   }
 
-  try {
-    // checking if mongoose is already connected to the database if connected return without connecting again
-    if (mongoose.connection.readyState === 1) {
-      console.log('mongodb is already connected.');
-      return;
-    }
+  const conn = await mongoose.connect(env.mongoUri);
+  console.log(`mongodb connected: ${conn.connection.host}`);
+};
 
-    // connecting to the database
-    const conn = await mongoose.connect(process.env.MONGO_URI as string);
-    console.log(`mongodb connected: ${conn.connection.host}`);
-  } catch (err) {
-    console.error('error connecting to mongodb:', err);
-    process.exit(1); // stopping the server if db connection fails
-  }
+export const closeDbConnection = async (): Promise<void> => {
+  await mongoose.connection.close();
+};
+
+export const isDbReady = (): boolean => {
+  return mongoose.connection.readyState === 1;
 };

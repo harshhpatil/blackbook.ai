@@ -55,6 +55,9 @@ const UserSchema: Schema<IUser> = new Schema(
   { timestamps: true }
 );
 
+UserSchema.index({ emailVerificationToken: 1, emailVerificationTokenExpiry: 1 });
+UserSchema.index({ passwordResetToken: 1, passwordResetTokenExpiry: 1 });
+
 // pre-save hook to hash the password before saving the user document
 UserSchema.pre<IUser>('save', async function (next: any) {
   // hashing the password if it is modified or new
