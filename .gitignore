@@ -70,3 +70,14 @@ temp/
 tmp/
 *.zip
 *.tar.gz
+
+# =============================================================
+# Backend / Shared
+# =============================================================
+.env
+.env.local
+.DS_Store
+dist/
+build/
+.next/
+blackbook.ai-backend-api-testing
