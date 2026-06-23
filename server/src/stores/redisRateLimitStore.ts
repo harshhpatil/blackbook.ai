@@ -6,8 +6,11 @@ import type {
 } from 'express-rate-limit';
 import { getRedisConnection } from '../config/redisConnection.ts';
 
+// custom store implementation for express-rate-limit using Redis as the backend
 export class RedisRateLimitStore implements Store {
+  // required by express-rate-limit to indicate keys are stored externally.
   localKeys = false;
+
   prefix: string;
   windowMs = 60_000;
 
@@ -22,21 +25,26 @@ export class RedisRateLimitStore implements Store {
   async increment(key: string): Promise<IncrementResponse> {
     const redis = getRedisConnection();
     const redisKey = `${this.prefix}${key}`;
+
     const totalHits = await redis.incr(redisKey);
 
+    // Set TTL only when the key is first created.
     if (totalHits === 1) {
       await redis.pexpire(redisKey, this.windowMs);
     }
 
     const ttl = await redis.pttl(redisKey);
-    const resetTime = new Date(Date.now() + Math.max(ttl, 0));
 
-    return { totalHits, resetTime };
+    return {
+      totalHits,
+      resetTime: new Date(Date.now() + Math.max(ttl, 0)),
+    };
   }
 
   async decrement(key: string): Promise<void> {
     const redis = getRedisConnection();
     const redisKey = `${this.prefix}${key}`;
+
     const value = await redis.decr(redisKey);
 
     if (value <= 0) {
@@ -51,6 +59,7 @@ export class RedisRateLimitStore implements Store {
   async get(key: string): Promise<ClientRateLimitInfo | undefined> {
     const redis = getRedisConnection();
     const redisKey = `${this.prefix}${key}`;
+
     const [value, ttl] = await Promise.all([
       redis.get(redisKey),
       redis.pttl(redisKey),

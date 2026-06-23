@@ -1,8 +1,19 @@
 import { Request, Response, NextFunction } from 'express';
 
-// gloabal error handeller function to handel unhandelled errors in the application
+// defining a clean custom error class
+export class AppError extends Error {
+  constructor(
+    public statusCode: number,
+    public message: string
+  ) {
+    super(message);
+    Object.setPrototypeOf(this, new.target.prototype);
+  }
+}
+
+// defining the global error handler middleware
 export default function errorHandler(
-  err: unknown,
+  err: Error,
   req: Request,
   res: Response,
   next: NextFunction
@@ -10,22 +21,23 @@ export default function errorHandler(
   void req;
   void next;
 
-  const error = err instanceof Error ? err : new Error('unknown error');
-  const maybeStatus =
-    typeof (err as { statusCode?: unknown })?.statusCode === 'number'
-      ? (err as { statusCode: number }).statusCode
-      : typeof (err as { status?: unknown })?.status === 'number'
-        ? (err as { status: number }).status
-        : undefined;
-  const status = maybeStatus && maybeStatus >= 400 && maybeStatus < 600
-    ? maybeStatus
-    : 500;
-
-  if (status >= 500) {
-    console.error('unhandled error', { message: error.message });
+  // if the error is an instance of AppError, send the custom error response
+  if (err instanceof AppError) {
+    return res.status(err.statusCode).json({
+      status: 'error',
+      message: err.message,
+    });
   }
 
-  return res
-    .status(status)
-    .json({ message: status === 500 ? 'internal server error' : error.message });
+  // falling back for unexpected system crashes
+  if (err instanceof Error) {
+    console.error('unhandelled internal error:', err);
+  } else {
+    console.error('unknown error type received:', err);
+  }
+
+  // sending a generic error response for unhandled errors
+  return res.status(500).json({
+    message: 'internal server error',
+  });
 }

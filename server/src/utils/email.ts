@@ -5,8 +5,8 @@ import { env } from '../config/env.ts';
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: env.emailUser,
-    pass: env.emailPass,
+    user: env.EMAIL_USER,
+    pass: env.EMAIL_PASS,
   },
 });
 

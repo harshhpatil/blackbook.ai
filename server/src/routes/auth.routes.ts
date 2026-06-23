@@ -37,11 +37,7 @@ import {
 
 const router = Router();
 
-const normalizeResetPasswordToken = (
-  req: any,
-  _res: any,
-  next: any
-): void => {
+const normalizeResetPasswordToken = (req: any, _res: any, next: any): void => {
   if (!req.body.token && typeof req.query.token === 'string') {
     req.body.token = req.query.token;
   }
@@ -52,7 +48,13 @@ const normalizeResetPasswordToken = (
 // defining the auth routes
 router.get('/csrf-token', issueCsrfToken);
 
-router.post('/login', csrfProtection, loginLimiter, validate(loginSchema), login);
+router.post(
+  '/login',
+  csrfProtection,
+  loginLimiter,
+  validate(loginSchema),
+  login
+);
 router.post(
   '/register',
   csrfProtection,
@@ -68,7 +70,12 @@ router.post(
   validate(changePasswordSchema),
   changePassword
 );
-router.post('/refresh-token', csrfProtection, refreshTokenLimiter, refreshToken);
+router.post(
+  '/refresh-token',
+  csrfProtection,
+  refreshTokenLimiter,
+  refreshToken
+);
 router.post(
   '/forgot-password',
   csrfProtection,

@@ -1,10 +1,12 @@
-import rateLimit, { Options } from 'express-rate-limit';
-import { RedisRateLimitStore } from './redisRateLimitStore.ts';
+import rateLimit, { Options, ipKeyGenerator } from 'express-rate-limit';
+import { RedisRateLimitStore } from '../stores/redisRateLimitStore.ts';
 
+// function to normalize the body value for email to ensure consistent key generation
 const normalizedBodyValue = (value: unknown): string | undefined => {
   return typeof value === 'string' ? value.trim().toLowerCase() : undefined;
 };
 
+// function to create a rate limiter with the given name and options
 const createLimiter = (
   name: string,
   options: Partial<Options>
@@ -14,9 +16,14 @@ const createLimiter = (
     legacyHeaders: false,
     passOnStoreError: true,
     store: new RedisRateLimitStore(name),
+
+    // This tells express-rate-limit to trust your custom setup and silences the IPv6 runtime string warning check
+    validate: { xForwardedForHeader: false },
     keyGenerator: (req) => {
+      const ip = ipKeyGenerator(req.ip ?? '');
+
       const email = normalizedBodyValue(req.body?.email);
-      return email ? `${req.ip}:${email}` : req.ip ?? 'unknown';
+      return email ? `${ip}:${email}` : ip;
     },
     ...options,
   });

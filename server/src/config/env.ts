@@ -1,59 +1,66 @@
-import Joi from 'joi';
+import { z } from 'zod';
 
-const envSchema = Joi.object({
-  NODE_ENV: Joi.string()
-    .valid('development', 'test', 'production')
+// defining the schema for enviroment variables
+const envSchema = z.object({
+  // server configurations
+  IS_PRODUCTION: z
+    .string()
+    .transform((val) => val === 'true')
+    .default(false),
+  NODE_ENV: z
+    .enum(['development', 'production', 'test'])
     .default('development'),
-  PORT: Joi.number().port().required(),
-  CLIENT_URL: Joi.string().uri().required(),
-  CORS_ORIGINS: Joi.string().allow('').default(''),
-  CROSS_SITE_COOKIES: Joi.boolean().truthy('true').falsy('false').default(false),
-  TRUST_PROXY: Joi.string().allow('').default(''),
-  MONGO_URI: Joi.string().uri({ scheme: ['mongodb', 'mongodb+srv'] }).required(),
-  REDIS_URL: Joi.string().uri({ scheme: ['redis', 'rediss'] }).required(),
-  JWT_SECRET: Joi.string().min(32).required(),
-  JWT_ISSUER: Joi.string().default('blackbook.ai'),
-  JWT_AUDIENCE: Joi.string().default('blackbook.ai-api'),
-  EMAIL_HOST: Joi.string().allow('').default(''),
-  EMAIL_PORT: Joi.number().port().default(587),
-  EMAIL_USER: Joi.string().required(),
-  EMAIL_PASS: Joi.string().required(),
-  EMAIL_FROM: Joi.string().email().default('no-reply@example.com'),
-}).unknown(true);
+  PORT: z.string().default('3000'),
+  CROSS_SITE_COOKIES: z
+    .string()
+    .transform((val) => val === 'true')
+    .default(false),
 
-const { error, value } = envSchema.validate(process.env, {
-  abortEarly: false,
-  convert: true,
+  // database and caching configurations
+  MONGO_URI: z.string().min(1, 'MONGO_URI is required'),
+  REDIS_URL: z.string().min(1, 'REDIS_URL is required'),
+
+  // security and CORS configurations
+  CLIENT_URL: z.string().url().min(1, 'CLIENT_URL is required'),
+  CORS_ORIGINS: z.string().min(1, 'CORS_ORIGINS is required'),
+  TRUST_PROXY: z.string().min(1, 'TRUST_PROXY is required'),
+  ALLOWED_ORIGINS: z.string().min(1, 'ALLOWED_ORIGINS is required'),
+
+  // email (SMTP) configurations
+  EMAIL_USER: z.string().email().min(1, 'EMAIL_USER is required'),
+  EMAIL_PASS: z.string().min(1, 'EMAIL_PASS is required'),
+  EMAIL_FROM: z.string().email().min(1, 'EMAIL_FROM is required'),
+
+  // authentication (JWT) configurations
+  JWT_SECRET: z.string().min(1, 'JWT_SECRET is required'),
+  JWT_AUDIENCE: z.string().min(1, 'JWT_AUDIENCE is required'),
+  JWT_ISSUER: z.string().min(1, 'JWT_ISSUER is required'),
+
+  // payment gateway configurations
+  PAYMENT_PROVIDER: z.string().min(1, 'PAYMENT_PROVIDER is required'),
+  PAYMENT_WEBHOOK_SECRET: z
+    .string()
+    .min(1, 'PAYMENT_WEBHOOK_SECRET is required'),
+  PAYMENT_SUCCESS_URL: z
+    .string()
+    .url()
+    .min(1, 'PAYMENT_SUCCESS_URL is required'),
+  PAYMENT_CANCEL_URL: z.string().url().min(1, 'PAYMENT_CANCEL_URL is required'),
+
+  RAZORPAY_KEY_ID: z.string().min(1, 'RAZORPAY_KEY_ID is required'),
+  RAZORPAY_KEY_SECRET: z.string().min(1, 'RAZORPAY_KEY_SECRET is required'),
 });
 
-if (error) {
-  const message = error.details.map((detail) => detail.message).join('; ');
-  throw new Error(`Invalid environment configuration: ${message}`);
+// parsing the enviroment variables using the schema and validating it
+const parsedEnv = envSchema.safeParse(process.env);
+
+if (!parsedEnv.success) {
+  console.error(
+    'enviroment variables does not exist or not loaded properly',
+    parsedEnv.error.format()
+  );
+  process.exit(1);
 }
 
-const corsOrigins = [
-  value.CLIENT_URL,
-  ...String(value.CORS_ORIGINS)
-    .split(',')
-    .map((origin) => origin.trim())
-    .filter(Boolean),
-];
-
-export const env = {
-  nodeEnv: value.NODE_ENV as 'development' | 'test' | 'production',
-  port: Number(value.PORT),
-  clientUrl: String(value.CLIENT_URL),
-  corsOrigins: Array.from(new Set(corsOrigins)),
-  crossSiteCookies: Boolean(value.CROSS_SITE_COOKIES),
-  trustProxy: String(value.TRUST_PROXY),
-  mongoUri: String(value.MONGO_URI),
-  redisUrl: String(value.REDIS_URL),
-  jwtSecret: String(value.JWT_SECRET),
-  jwtIssuer: String(value.JWT_ISSUER),
-  jwtAudience: String(value.JWT_AUDIENCE),
-  emailUser: String(value.EMAIL_USER),
-  emailPass: String(value.EMAIL_PASS),
-  emailFrom: String(value.EMAIL_FROM),
-};
-
-export const isProduction = env.nodeEnv === 'production';
+// exporting the parsed enviroment variables
+export const env = parsedEnv.data;

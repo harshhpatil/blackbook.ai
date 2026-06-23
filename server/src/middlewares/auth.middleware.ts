@@ -12,6 +12,15 @@ interface DecodedToken {
   sessionId: string;
 }
 
+// defining the decoded token structure and the user information that will be attached to the request object
+interface AuthenticatedRequest extends Request {
+  user: {
+    id: string;
+    role: string;
+    sessionId: string;
+  };
+}
+
 // authentication middleware to protect routes and ensure only authenticated users can access them
 export const authenticate = async (
   req: Request,
@@ -26,11 +35,11 @@ export const authenticate = async (
   }
 
   try {
-    // verifying the token and extracting the payload
-    const decoded = jwt.verify(token, env.jwtSecret, {
+    // verifying the token, extracting the payload and validating it
+    const decoded = jwt.verify(token, env.JWT_SECRET, {
       algorithms: ['HS256'],
-      audience: env.jwtAudience,
-      issuer: env.jwtIssuer,
+      audience: env.JWT_AUDIENCE,
+      issuer: env.JWT_ISSUER,
     }) as DecodedToken;
     const user = await User.findById(decoded.userId);
 
@@ -38,6 +47,7 @@ export const authenticate = async (
       return res.status(403).json({ message: 'invalid or expired token' });
     }
 
+    // checking if the session associated with the token is still valid, not revoked and validating it
     const session = await Session.findOne({
       _id: decoded.sessionId,
       user: user._id,
@@ -50,7 +60,7 @@ export const authenticate = async (
     }
 
     // attaching the user information to the request object for further use in the route handlers
-    req.user = {
+    (req as AuthenticatedRequest).user = {
       id: user.id,
       role: user.role,
       sessionId: session._id.toString(),

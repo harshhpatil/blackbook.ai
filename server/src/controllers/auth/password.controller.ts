@@ -105,7 +105,7 @@ export async function forgotPassword(
 
     // generating a password reset token and its hashed version, creating a password reset link, saving the hashed token and its expiry time to the user's record, and sending the password reset email
     const { resetToken, hashedResetToken } = generatePasswordResetToken();
-    const baseURL = env.clientUrl;
+    const baseURL = env.CLIENT_URL;
 
     // creating the password reset link using the reset token and the base URL
     const resetLink = `${baseURL}/reset-password?token=${encodeURIComponent(resetToken)}`;

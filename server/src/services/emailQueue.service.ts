@@ -34,16 +34,13 @@ const defaultEmailJobOptions: JobsOptions = {
   removeOnFail: { age: 7 * 24 * 60 * 60, count: 1000 },
 };
 
-const emailJobId = (
-  name: string,
-  payload: Record<string, string>
-): string => {
+const emailJobId = (name: string, payload: Record<string, string>): string => {
   const digest = crypto
     .createHash('sha256')
     .update(JSON.stringify({ name, payload }))
     .digest('hex');
 
-  return `${name}:${digest}`;
+  return `${name}-${digest}`;
 };
 
 export async function createEmailOutboxEvent(
@@ -73,9 +70,11 @@ export async function publishEmailOutboxEvent(
     event.attempts += 1;
     event.lastError = err instanceof Error ? err.message : 'unknown error';
     await event.save();
+
     console.error('email outbox publish failed', {
       eventId: event._id.toString(),
       eventName: event.eventName,
+      error: err,
     });
   }
 }

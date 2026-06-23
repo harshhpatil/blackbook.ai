@@ -1,15 +1,15 @@
-export {};
+// types/express.d.ts
+import * as express from 'express';
 
 declare global {
   namespace Express {
-    interface User {
-      id: string;
-      role: 'user' | 'admin';
-      sessionId: string;
-    }
-
     interface Request {
-      user?: User;
+      user: {
+        id: string;
+      };
+      rawBody?: Buffer;
     }
   }
 }
+
+export {}; // Forces TS to treat this file as a module

@@ -1,90 +1,60 @@
-import express, { Application, Request, Response } from 'express';
+import express, { Application } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
+
+// importing the configs and middlewares
 import { env } from './config/env.ts';
-import { checkRedisConnection } from './config/redisConnection.ts';
-import { isDbReady } from './config/dbConnection.ts';
-
-// importing the global error handler middleware to handle unhandled errors in the application
 import errorHandler from './middlewares/errorHandeler.middleware.ts';
+import {
+  verifyRequestOrigin,
+  isAllowedOrigin,
+} from './middlewares/security.middleware.ts';
 
-// importing the routes fron the routes directory
+// importing the core routes
+import systemRoutes from './routes/system.routes.ts';
 import authRoutes from './routes/auth.routes.ts';
+import paymentRoutes from './routes/payment.routes.ts';
 
 const app: Application = express();
-const allowedOrigins = env.corsOrigins;
 
-if (env.trustProxy) {
-  app.set('trust proxy', env.trustProxy);
+// server settings
+if (env.TRUST_PROXY) {
+  app.set('trust proxy', env.TRUST_PROXY);
 }
 
-const isAllowedOrigin = (origin?: string): boolean => {
-  if (!origin) return true;
-  return allowedOrigins.includes(origin);
-};
-
-const verifyRequestOrigin = (
-  req: Request,
-  res: Response,
-  next: express.NextFunction
-): void | Response => {
-  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    return next();
-  }
-
-  const origin = req.get('origin');
-  if (origin && !isAllowedOrigin(origin)) {
-    return res.status(403).json({ message: 'forbidden origin' });
-  }
-
-  return next();
-};
-
-// middleware
+// global security and parsing middlewares
 app.use(
   cors({
     origin(origin, callback) {
       if (isAllowedOrigin(origin)) {
-        return callback(null, origin ?? false);
+        return callback(null, true);
       }
-
-      return callback(new Error('Origin is not allowed by CORS'));
+      return callback(new Error('origin is not allowed by cors'));
     },
-    credentials: true,
   })
 );
-app.use(express.json());
+
+// parsing middlewares
+// store raw body for webhook verification
+app.use(
+  express.json({
+    verify: (req: any, _res, buf) => {
+      if (req.originalUrl === '/api/v1/payment/webhook') {
+        req.rawBody = buf;
+      }
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(verifyRequestOrigin);
 
-// defining the routes for the application
-app.get('/api/health', (req: Request, res: Response) => {
-  res.status(200).json({
-    status: 'success',
-    message: 'blackbook express app is configured.',
-    timestamp: new Date().toISOString(),
-  });
-});
-
-app.get('/api/ready', async (_req: Request, res: Response) => {
-  const mongoReady = isDbReady();
-  const redisReady = await checkRedisConnection();
-  const ready = mongoReady && redisReady;
-
-  return res.status(ready ? 200 : 503).json({
-    status: ready ? 'ready' : 'not_ready',
-    dependencies: {
-      mongo: mongoReady ? 'ready' : 'not_ready',
-      redis: redisReady ? 'ready' : 'not_ready',
-    },
-    timestamp: new Date().toISOString(),
-  });
-});
-
+// application routes
+app.use('/api', systemRoutes);
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/payment', paymentRoutes);
 
-// global error handler middleware to handle unhandled errors in the application
+// global error handler middleware
 app.use(errorHandler);
 
-export default app;
+export default app; // exporting the app for server startup and testing

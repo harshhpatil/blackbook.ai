@@ -27,12 +27,12 @@ export function generateAccessToken(
       tokenVersion: payload.tokenVersion,
       sessionId,
     },
-    env.jwtSecret,
+    env.JWT_SECRET,
     {
       algorithm: 'HS256',
-      audience: env.jwtAudience,
+      audience: env.JWT_AUDIENCE,
       expiresIn: '15m',
-      issuer: env.jwtIssuer,
+      issuer: env.JWT_ISSUER,
     }
   );
 }
@@ -41,7 +41,7 @@ export function generateAccessToken(
 export function generateRefreshToken(): string {
   return crypto.randomUUID(); // returning a random UUID as the refresh token
 }
- 
+
 // function to generate hashed token
 export function hashToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex'); // returning hashed token using sha256
