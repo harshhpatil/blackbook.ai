@@ -27,6 +27,14 @@ export const authenticate = async (
   res: Response,
   next: NextFunction
 ): Promise<void | Response> => {
+  // This endpoint must be reachable before a user has an access token.
+  if (
+    req.method === 'GET' &&
+    req.originalUrl.split('?')[0] === '/api/v1/auth/csrf-token'
+  ) {
+    return next();
+  }
+
   // extracting the token from the cookies and validating it
   const token = req.cookies.accessToken;
 
@@ -66,8 +74,8 @@ export const authenticate = async (
       sessionId: session._id.toString(),
     };
 
-    next();
-  } catch (err) {
+    next(); // proceeding to the next middleware or route handler
+  } catch {
     return res.status(403).json({ message: 'invalid or expired token' });
   }
 };

@@ -1,7 +1,7 @@
 import { CookieOptions, Request } from 'express';
 import mongoose from 'mongoose';
-import { Audit } from '../../models/Audit.model.ts';
-import { env } from '../../config/env.ts';
+import { Audit } from '../models/Audit.model.ts';
+import { env } from '../config/env.ts';
 
 // cookie options for setting the token's in the cookie
 export const authCookieOptions: CookieOptions = {
@@ -16,7 +16,7 @@ interface RecordAuditParams {
   user: mongoose.Types.ObjectId | string;
   event: string;
   req: Request;
-  meta?: Record<string, any>;
+  meta?: Record<string, unknown>;
 }
 
 // defining the function to log the audit events
@@ -35,7 +35,9 @@ export async function recordAudit({
       userAgent: req.headers['user-agent'],
       meta,
     });
-  } catch (err) {} // ignoring any errors that occur during the audit logging to avoid affecting the main flow of the application
+  } catch {
+    // Audit logging should never block the primary request flow.
+  }
 }
 
 // typescript custom error class for handling the authentication errors

@@ -11,6 +11,8 @@ export interface IPaymentOrder extends Document {
   purpose: string;
   status: 'created' | 'paid' | 'failed' | 'refunded' | 'pending' | 'cancelled';
   idempotencyKey: string;
+  creditsGranted: number;
+  creditsGrantedAt?: Date;
 }
 
 // defining the schema for the PaymentOrder model
@@ -61,6 +63,12 @@ const paymentOrderSchema = new Schema<IPaymentOrder>(
       unique: true,
       required: true,
     },
+    creditsGranted: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    creditsGrantedAt: Date,
   },
   {
     timestamps: true,

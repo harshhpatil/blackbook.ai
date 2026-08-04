@@ -36,7 +36,7 @@ const SessionSchema: Schema<ISession> = new Schema(
 );
 
 SessionSchema.index({ tokenHash: 1, revoked: 1, expiresAt: 1 });
-SessionSchema.index({ user: 1, revoked: 1, expiresAt: 1, createdAt: -1 });
+SessionSchema.index({ user: 1, revoked: 1, createdAt: -1, expiresAt: 1 });
 SessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 // exporting the session model

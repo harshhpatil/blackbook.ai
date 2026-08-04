@@ -71,3 +71,26 @@ export const verifyPaymentSchema = z.object({
     .trim()
     .min(1, 'razorpay_signature is required'),
 });
+
+// checkout validation schema
+export const checkoutSchema = z.object({
+  amount: z.number().int().positive().min(100, {
+    message: 'Amount must be at least 1 INR (100 paise)',
+  }),
+
+  currency: z.literal('INR').default('INR'),
+
+  purpose: z
+    .string()
+    .min(3, {
+      message: 'Purpose must be at least 3 characters long',
+    })
+    .max(255, {
+      message: 'Purpose cannot exceed 255 characters',
+    }),
+
+  // Frontend should generate a UUID v4
+  idempotencyKey: z.uuid({
+    message: 'Invalid idempotency key',
+  }),
+});

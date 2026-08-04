@@ -6,7 +6,7 @@ export interface IAudit extends Document {
   event: string;
   ip?: string;
   userAgent?: string;
-  meta?: Record<string, any>;
+  meta?: Record<string, unknown>;
   createdAt: Date;
 }
 

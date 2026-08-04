@@ -4,12 +4,21 @@ import mongoose from 'mongoose';
 import { IUser, User } from '../../models/Users.model.ts';
 import { IEmailOutbox } from '../../models/EmailOutbox.model.ts';
 import { hashToken } from '../../services/token.service.js';
-import { AuthError, recordAudit } from './auth.helpers.js';
+import { AuthError, recordAudit } from '../../helpers/auth.helpers.ts';
 import { env } from '../../config/env.ts';
 import {
   createEmailOutboxEvent,
   publishEmailOutboxEvent,
 } from '../../services/emailQueue.service.ts';
+
+const isDuplicateKeyError = (err: unknown): err is { code: number } => {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'code' in err &&
+    err.code === 11000
+  );
+};
 
 // function to register users
 export async function register(
@@ -26,7 +35,7 @@ export async function register(
 
     // normalizing the email and checking if the user with the same email already exists in the database
     const normalizedEmail = email.trim().toLowerCase();
-    const baseUrl = env.clientUrl;
+    const baseUrl = env.CLIENT_URL;
 
     // generating email verification token and its expiry time
     const emailVerificationToken = crypto.randomBytes(32).toString('hex');
@@ -87,8 +96,8 @@ export async function register(
       message:
         'User registered successfully. Please check your email to verify your account.',
     });
-  } catch (err: any) {
-    if (err?.code === 11000) {
+  } catch (err) {
+    if (isDuplicateKeyError(err)) {
       return next(new AuthError('email is already registered', 409));
     }
 

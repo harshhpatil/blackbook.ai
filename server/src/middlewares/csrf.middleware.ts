@@ -1,11 +1,12 @@
 import crypto from 'node:crypto';
 import { Request, Response, NextFunction } from 'express';
-import { authCookieOptions } from '../controllers/auth/auth.helpers.ts';
+import { authCookieOptions } from '../helpers/auth.helpers.ts';
 
 // defining constants for the CSRF token cookie name and header name
 const CSRF_COOKIE_NAME = 'csrfToken';
 const CSRF_HEADER_NAME = 'x-csrf-token';
 
+// utility function to check if the http method is considered safe (GET, HEAD, OPTIONS)
 const isSafeMethod = (method: string): boolean => {
   return ['GET', 'HEAD', 'OPTIONS'].includes(method);
 };

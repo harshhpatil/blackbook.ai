@@ -10,6 +10,7 @@ interface createCheckoutParams {
   amount: number;
   currency: string;
   purpose: string;
+  idempotencyKey: string;
 }
 
 // function to create a new checkout order
@@ -18,13 +19,11 @@ export async function createCheckout({
   amount,
   currency,
   purpose,
+  idempotencyKey,
 }: createCheckoutParams) {
-  // creating a unique idempotency key for the order
-  const idempotencyKey = crypto.randomUUID();
-
   // creating a new payment order in the database with the provided details
   const razorpayOrder = await razorpay.orders.create({
-    amount: amount * 100, // amount in paise
+    amount: amount,
     currency,
     receipt: idempotencyKey,
   });

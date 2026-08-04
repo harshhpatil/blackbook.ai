@@ -49,6 +49,39 @@ const envSchema = z.object({
 
   RAZORPAY_KEY_ID: z.string().min(1, 'RAZORPAY_KEY_ID is required'),
   RAZORPAY_KEY_SECRET: z.string().min(1, 'RAZORPAY_KEY_SECRET is required'),
+
+  // object storage (AWS S3 or S3-compatible providers such as MinIO)
+  AWS_ACCESS_KEY: z.string().min(1, 'AWS_ACCESS_KEY is required'),
+  AWS_SECRET_KEY: z.string().min(1, 'AWS_SECRET_KEY is required'),
+  AWS_S3_BUCKET_NAME: z.string().min(1, 'AWS_S3_BUCKET_NAME is required'),
+  AWS_S3_REGION: z.string().min(1).default('ap-south-1'),
+  AWS_S3_ENDPOINT: z.string().url().optional(),
+  AWS_S3_FORCE_PATH_STYLE: z
+    .string()
+    .transform((val) => val === 'true')
+    .default(false),
+
+  // logging configurations
+  LOG_LEVEL: z
+    .enum(['trace', 'debug', 'info', 'warn', 'error', 'fatal'])
+    .default('info'),
+  LOG_PRETTY_PRINT: z
+    .string()
+    .transform((val) => val === 'true')
+    .optional(),
+  LOG_REDACT_PATHS: z.string().optional(),
+
+  // Google Gemini 
+  GOOGLE_GEMINI_MODEL : z.string().min(1, 'GOOGLE_GEMINI_MODEL is required'),
+  GOOGLE_GEMINI_API_KEY : z.string().min(1, 'GOOGLE_GEMINI_API_KEY is required'),
+  GEMINI_TIMEOUT_MS: z.coerce.number().int().min(5_000).max(120_000).default(45_000),
+  GEMINI_MAX_RETRIES: z.coerce.number().int().min(0).max(3).default(2),
+  GEMINI_MAX_INPUT_CHARS: z.coerce.number().int().min(10_000).max(1_000_000).default(250_000),
+  GEMINI_MAX_OUTPUT_TOKENS: z.coerce.number().int().min(1_024).max(65_536).default(32_768),
+
+  // Credits: map payment purposes to credit amounts, e.g. {"credits_10":10}
+  CREDIT_PACKAGES_JSON: z.string().default('{}'),
+  GENERATION_CREDIT_COST: z.coerce.number().int().min(0).max(100).default(1),
 });
 
 // parsing the enviroment variables using the schema and validating it

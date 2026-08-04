@@ -1,18 +1,13 @@
 import crypto from 'node:crypto';
+import { env } from '../../config/env.ts';
 
 // function to verify the webhook signature using HMAC SHA256
 export function verifyWebhookSignature(
   payload: Buffer,
   signature: string
 ): boolean {
-  const secret = process.env.PAYMENT_WEBHOOK_SECRET;
-
-  if (!secret) {
-    throw new Error('PAYMENT_WEBHOOK_SECRET is missing');
-  }
-
   const expectedSignature = crypto
-    .createHmac('sha256', secret)
+    .createHmac('sha256', env.PAYMENT_WEBHOOK_SECRET)
     .update(payload)
     .digest('hex');
 

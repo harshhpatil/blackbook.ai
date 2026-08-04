@@ -11,7 +11,7 @@ import {
   createEmailOutboxEvent,
   publishEmailOutboxEvent,
 } from '../../services/emailQueue.service.ts';
-import { authCookieOptions, recordAudit } from './auth.helpers.ts';
+import { authCookieOptions, recordAudit } from '../../helpers/auth.helpers.ts';
 import { env } from '../../config/env.ts';
 
 // function to change the password of the logged in user by validating the current password, updating the password and revoking all active sessions

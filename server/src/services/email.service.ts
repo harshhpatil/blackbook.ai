@@ -1,5 +1,8 @@
 import transporter from '../utils/email.ts';
 import { env } from '../config/env.ts';
+import { createLogger } from '../lib/logger.ts';
+
+const log = createLogger('email-service');
 
 // function to send verification email
 export const sendVerificationEmail = async (
@@ -8,7 +11,7 @@ export const sendVerificationEmail = async (
 ): Promise<void> => {
   try {
     await transporter.sendMail({
-      from: `"Auth-System" <${env.emailFrom}>`,
+      from: `"Auth-System" <${env.EMAIL_FROM}>`,
       to: email,
       subject: 'Verify Your Email Address',
       html: `
@@ -22,8 +25,8 @@ export const sendVerificationEmail = async (
       `,
     });
   } catch (error) {
-    console.error('error sending verification email:', error);
-    throw new Error('email could not be sent');
+    log.error({ err: error, email }, 'error sending verification email');
+    throw new Error('email could not be sent', { cause: error });
   }
 };
 
@@ -34,7 +37,7 @@ export const sendPasswordResetEmail = async (
 ): Promise<void> => {
   try {
     await transporter.sendMail({
-      from: `"Auth-System" <${env.emailFrom}>`,
+      from: `"Auth-System" <${env.EMAIL_FROM}>`,
       to: email,
       subject: 'Password Reset Request',
       html: `
@@ -48,8 +51,8 @@ export const sendPasswordResetEmail = async (
         `,
     });
   } catch (err) {
-    console.error('error sending password reset email', err);
-    throw new Error('email could not be sent');
+    log.error({ err, email }, 'error sending password reset email');
+    throw new Error('email could not be sent', { cause: err });
   }
 };
 
@@ -57,7 +60,7 @@ export const sendPasswordResetEmail = async (
 export const sendWelcomeEmail = async (email: string): Promise<void> => {
   try {
     await transporter.sendMail({
-      from: `"Your App Name" <${env.emailFrom}>`,
+      from: `"Your App Name" <${env.EMAIL_FROM}>`,
       to: email,
       subject: 'Welcome to Our Platform 🎉',
       html: `
@@ -68,7 +71,7 @@ export const sendWelcomeEmail = async (email: string): Promise<void> => {
       `,
     });
   } catch (error) {
-    console.error('Error sending welcome email:', error);
-    throw new Error('Email could not be sent');
+    log.error({ err: error, email }, 'error sending welcome email');
+    throw new Error('Email could not be sent', { cause: error });
   }
 };

@@ -6,7 +6,11 @@ import {
   generateRefreshToken,
   hashToken,
 } from '../../services/token.service.ts';
-import { authCookieOptions, recordAudit, AuthError } from './auth.helpers.ts';
+import {
+  authCookieOptions,
+  recordAudit,
+  AuthError,
+} from '../../helpers/auth.helpers.ts';
 
 export async function login(
   req: Request,

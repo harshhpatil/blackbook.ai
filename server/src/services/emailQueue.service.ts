@@ -7,6 +7,9 @@ import {
   EmailOutboxEventName,
   IEmailOutbox,
 } from '../models/EmailOutbox.model.ts';
+import { createLogger } from '../lib/logger.ts';
+
+const log = createLogger('email-queue');
 
 // initializind the queue
 let emailQueue: Queue | undefined;
@@ -17,6 +20,7 @@ export const getEmailQueue = (): Queue => {
   emailQueue = new Queue('emailQueue', {
     connection: getBullRedisConnection() as ConnectionOptions,
   });
+  log.info('email queue initialized');
 
   return emailQueue;
 };
@@ -25,6 +29,7 @@ export const closeEmailQueue = async (): Promise<void> => {
   if (!emailQueue) return;
   await emailQueue.close();
   emailQueue = undefined;
+  log.info('email queue closed');
 };
 
 const defaultEmailJobOptions: JobsOptions = {
@@ -71,11 +76,14 @@ export async function publishEmailOutboxEvent(
     event.lastError = err instanceof Error ? err.message : 'unknown error';
     await event.save();
 
-    console.error('email outbox publish failed', {
-      eventId: event._id.toString(),
-      eventName: event.eventName,
-      error: err,
-    });
+    log.error(
+      {
+        err,
+        eventId: event._id.toString(),
+        eventName: event.eventName,
+      },
+      'email outbox publish failed'
+    );
   }
 }
 
@@ -111,14 +119,14 @@ export async function queueVerificationEmail(
     link: verificationLink,
   });
 
-  console.log('Verification email job added to the queue.');
+  log.info({ email, jobName: 'send-verification-email' }, 'email job queued');
 }
 
 // function to add a job to the queue for sending welcome email
 export async function queueWelcomeEmail(email: string): Promise<void> {
   await addEmailJob('send-welcome-email', { email });
 
-  console.log('Welcome email job added to the queue.');
+  log.info({ email, jobName: 'send-welcome-email' }, 'email job queued');
 }
 
 // function to add a job to the queue for sending password reset email
@@ -131,5 +139,5 @@ export async function queuePasswordResetEmail(
     link: resetLink,
   });
 
-  console.log('Password reset email job added to the queue.');
+  log.info({ email, jobName: 'send-password-reset-email' }, 'email job queued');
 }

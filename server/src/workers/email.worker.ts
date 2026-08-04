@@ -1,10 +1,13 @@
-import { Worker, Job } from 'bullmq';
+import { ConnectionOptions, Worker, Job } from 'bullmq';
 import { getBullRedisConnection } from '../config/redisConnection.ts';
 import {
   sendVerificationEmail,
   sendWelcomeEmail,
   sendPasswordResetEmail,
 } from '../services/email.service.ts';
+import { createLogger } from '../lib/logger.ts';
+
+const log = createLogger('email-worker');
 
 type EmailJobName =
   | 'send-verification-email'
@@ -36,7 +39,7 @@ export const emailWorker = new Worker(
 
     switch (name) {
       case 'send-verification-email':
-        console.log('Processing verification email job.');
+        log.info({ jobId: job.id, jobName: name }, 'processing email job');
         await sendVerificationEmail(
           assertString(data.email, 'email', name),
           assertString(data.link, 'link', name)
@@ -44,12 +47,12 @@ export const emailWorker = new Worker(
         break;
 
       case 'send-welcome-email':
-        console.log('Processing welcome email job.');
+        log.info({ jobId: job.id, jobName: name }, 'processing email job');
         await sendWelcomeEmail(assertString(data.email, 'email', name));
         break;
 
       case 'send-password-reset-email':
-        console.log('Processing password reset email job.');
+        log.info({ jobId: job.id, jobName: name }, 'processing email job');
         await sendPasswordResetEmail(
           assertString(data.email, 'email', name),
           assertString(data.link, 'link', name)
@@ -61,15 +64,26 @@ export const emailWorker = new Worker(
     }
   },
   {
-    connection: getBullRedisConnection() as any, // Ensure this matches your Redis connection configuration
+    connection: getBullRedisConnection() as ConnectionOptions, // Ensure this matches your Redis connection configuration
     concurrency: 5, // Process up to 5 emails simultaneously
   }
 );
 
 emailWorker.on('completed', (job) => {
-  console.log(`worker job ${job.id} (${job.name}) completed successfully.`);
+  log.info(
+    { jobId: job.id, jobName: job.name, attemptsMade: job.attemptsMade },
+    'email worker job completed'
+  );
 });
 
 emailWorker.on('failed', (job, err) => {
-  console.error(`worker job ${job?.id} (${job?.name}) failed:`, err.message);
+  log.error(
+    {
+      err,
+      jobId: job?.id,
+      jobName: job?.name,
+      attemptsMade: job?.attemptsMade,
+    },
+    'email worker job failed'
+  );
 });

@@ -1,4 +1,9 @@
 import { Request, Response, NextFunction } from 'express';
+import { createLogger } from '../lib/logger.ts';
+import { GeminiGenerationError } from '../services/gemini.service.ts';
+import { CreditError } from '../services/credit.service.ts';
+
+const log = createLogger('error-handler');
 
 // defining a clean custom error class
 export class AppError extends Error {
@@ -21,8 +26,27 @@ export default function errorHandler(
   void req;
   void next;
 
+  if (err instanceof GeminiGenerationError) {
+    req.log.warn({ err, requestId: req.id, path: req.originalUrl }, 'Gemini generation failed');
+    return res.status(err.statusCode).json({ status: 'error', message: err.message });
+  }
+
+  if (err instanceof CreditError) {
+    return res.status(err.statusCode).json({ status: 'error', message: err.message });
+  }
+
   // if the error is an instance of AppError, send the custom error response
   if (err instanceof AppError) {
+    req.log.warn(
+      {
+        err,
+        statusCode: err.statusCode,
+        requestId: req.id,
+        path: req.originalUrl,
+      },
+      'handled application error'
+    );
+
     return res.status(err.statusCode).json({
       status: 'error',
       message: err.message,
@@ -31,9 +55,15 @@ export default function errorHandler(
 
   // falling back for unexpected system crashes
   if (err instanceof Error) {
-    console.error('unhandelled internal error:', err);
+    req.log.error(
+      { err, requestId: req.id, path: req.originalUrl },
+      'unhandled internal error'
+    );
   } else {
-    console.error('unknown error type received:', err);
+    log.error(
+      { error: err, requestId: req.id, path: req.originalUrl },
+      'unknown error type received'
+    );
   }
 
   // sending a generic error response for unhandled errors

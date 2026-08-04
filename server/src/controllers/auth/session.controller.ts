@@ -6,13 +6,13 @@ import {
   generateRefreshToken,
   hashToken,
 } from '../../services/token.service.js';
-import { authCookieOptions, recordAudit } from './auth.helpers.js';
+import { authCookieOptions, recordAudit } from '../../helpers/auth.helpers.ts';
 
 // function to refresh the access token using the refresh token
 export async function refreshToken(
   req: Request,
   res: Response,
-  next: NextFunction,
+  next: NextFunction
 ): Promise<void | Response> {
   try {
     // extracting the refresh token from the cookies and validating it
@@ -68,7 +68,7 @@ export async function refreshToken(
       },
       {
         new: true,
-      },
+      }
     );
 
     // returning unauthorized response if the session was not updated, which can happen if the refresh token was already rotated or revoked
@@ -84,7 +84,7 @@ export async function refreshToken(
     );
 
     await recordAudit({
-      user: matchedSession.user as any,
+      user: matchedSession.user,
       event: 'refresh_token',
       req,
     });
@@ -134,7 +134,7 @@ export async function logout(
     res.clearCookie('accessToken', authCookieOptions);
     res.clearCookie('refreshToken', authCookieOptions);
     await recordAudit({
-      user: matchedSession.user as any,
+      user: matchedSession.user,
       event: 'logout',
       req,
     });

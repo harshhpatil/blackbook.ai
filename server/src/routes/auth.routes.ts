@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { NextFunction, Request, Response, Router } from 'express';
 import {
   login,
   register,
@@ -37,7 +37,11 @@ import {
 
 const router = Router();
 
-const normalizeResetPasswordToken = (req: any, _res: any, next: any): void => {
+const normalizeResetPasswordToken = (
+  req: Request,
+  _res: Response,
+  next: NextFunction
+): void => {
   if (!req.body.token && typeof req.query.token === 'string') {
     req.body.token = req.query.token;
   }

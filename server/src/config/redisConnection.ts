@@ -1,5 +1,8 @@
 import { Redis } from 'ioredis';
 import { env } from './env.ts';
+import { createLogger } from '../lib/logger.ts';
+
+const log = createLogger('redis');
 
 // performing singleton pattern for redis connection to avoid multiple connections and improve performance
 let redisConnection: Redis | undefined;
@@ -19,11 +22,11 @@ export const getRedisConnection = (): Redis => {
 
   // adding event listeners for redis connection events
   redisConnection.on('connect', () => {
-    console.log('connected to redis successfully.');
+    log.info('redis connected');
   });
 
   redisConnection.on('error', (err) => {
-    console.error('redis connection error:', { message: err.message });
+    log.error({ err }, 'redis connection error');
     throw new Error('redis connection error:', { cause: err });
   });
 
@@ -44,11 +47,11 @@ export const getBullRedisConnection = (): Redis => {
 
   // adding event listeners for bullmq redis connection events
   bullRedisConnection.on('connect', () => {
-    console.log('connected to bullmq redis successfully.');
+    log.info('bullmq redis connected');
   });
 
   bullRedisConnection.on('error', (err) => {
-    console.error('bullmq redis connection error:', { message: err.message });
+    log.error({ err }, 'bullmq redis connection error');
   });
 
   // returning the bullmq redis connection instance
@@ -73,9 +76,11 @@ export const closeRedisConnection = async (): Promise<void> => {
   if (!redisConnection) return;
   await redisConnection.quit();
   redisConnection = undefined;
+  log.info('redis connection closed');
 
   if (bullRedisConnection) {
     await bullRedisConnection.quit();
     bullRedisConnection = undefined;
+    log.info('bullmq redis connection closed');
   }
 };

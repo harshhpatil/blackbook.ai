@@ -5,6 +5,9 @@ import { dbConnection, closeDbConnection } from './config/dbConnection.ts';
 import { closeRedisConnection } from './config/redisConnection.ts';
 import { closeEmailQueue } from './services/emailQueue.service.ts';
 import { env } from './config/env.ts';
+import { createLogger } from './lib/logger.ts';
+
+const log = createLogger('api');
 
 let server: http.Server;
 
@@ -14,13 +17,13 @@ const startServer = async () => {
   await dbConnection();
 
   server = app.listen(env.PORT, () => {
-    console.log(`server is running on port ${env.PORT} in ${env.NODE_ENV} mode..!!`);
+    log.info({ port: env.PORT, nodeEnv: env.NODE_ENV }, 'server started');
   });
 };
 
 // function to shutdown the server
 const shutdown = async (signal: string): Promise<void> => {
-  console.log(`received ${signal}, shutting down api..!!`);
+  log.info({ signal }, 'received shutdown signal');
 
   // closing the server if it is running
   if (server) {
@@ -33,6 +36,7 @@ const shutdown = async (signal: string): Promise<void> => {
   await closeEmailQueue();
   await closeRedisConnection();
   await closeDbConnection();
+  log.info('api shutdown complete');
   process.exit(0);
 };
 
@@ -44,9 +48,18 @@ process.on('SIGTERM', () => {
   void shutdown('SIGTERM');
 });
 
+process.on('uncaughtException', (err) => {
+  log.fatal({ err }, 'uncaught exception');
+  process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+  log.fatal({ err: reason }, 'unhandled promise rejection');
+  process.exit(1);
+});
+
 // starting the server and catching any errors during startup
 startServer().catch((err) => {
-  const message = err instanceof Error ? err.message : 'unknown startup error';
-  console.error('failed to start server', { message });
+  log.fatal({ err }, 'failed to start server');
   process.exit(1);
 });

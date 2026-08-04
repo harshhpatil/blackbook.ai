@@ -12,6 +12,7 @@ export interface IUser extends Document {
   emailVerificationTokenExpiry?: Date;
   passwordResetToken?: string;
   passwordResetTokenExpiry?: Date;
+  credits: number;
   createdAt: Date;
   updatedAt: Date;
 
@@ -51,15 +52,23 @@ const UserSchema: Schema<IUser> = new Schema(
     emailVerificationTokenExpiry: Date,
     passwordResetToken: String,
     passwordResetTokenExpiry: Date,
+    credits: {
+      type: Number,
+      default: 50, // Free starting credits for new signups
+      min: 0,
+    },
   },
   { timestamps: true }
 );
 
-UserSchema.index({ emailVerificationToken: 1, emailVerificationTokenExpiry: 1 });
+UserSchema.index({
+  emailVerificationToken: 1,
+  emailVerificationTokenExpiry: 1,
+});
 UserSchema.index({ passwordResetToken: 1, passwordResetTokenExpiry: 1 });
 
 // pre-save hook to hash the password before saving the user document
-UserSchema.pre<IUser>('save', async function (next: any) {
+UserSchema.pre<IUser>('save', async function () {
   // hashing the password if it is modified or new
   if (!this.isModified('password') || !this.password) {
     return;

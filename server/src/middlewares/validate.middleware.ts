@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { ZodTypeAny, ZodError } from 'zod';
+import { ZodTypeAny } from 'zod';
 
 // middleware to validate request body against a Zod schema
 const validate = (schema: ZodTypeAny) => {
@@ -10,12 +10,12 @@ const validate = (schema: ZodTypeAny) => {
       const errors = result.error.issues.map((issue) => issue.message);
 
       return res.status(400).json({
-        message: 'validation failed',
+        message: 'request body validation failed',
         errors,
       });
     }
 
-    // Parsed & sanitized data
+    // parsed & sanitized data
     req.body = result.data;
 
     next();

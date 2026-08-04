@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from 'mongoose';
 
 // defining the interface for the PaymentWebhookEvent model
 export interface IPaymentWebhookEvent extends Document {
-  provider: 'string';
+  provider: string;
   providerEventId: string;
   eventType: string;
   status: 'received' | 'processed' | 'failed';
