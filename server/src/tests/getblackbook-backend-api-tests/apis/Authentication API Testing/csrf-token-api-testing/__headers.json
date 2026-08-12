@@ -1,0 +1,10 @@
+[
+  {
+    "id": 1786557374890022,
+    "key": "origin",
+    "value": "http://localhost:5173",
+    "isEnabled": true,
+    "description": "",
+    "dataType": "string"
+  }
+]

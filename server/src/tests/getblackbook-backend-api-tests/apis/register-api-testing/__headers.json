@@ -1,0 +1,10 @@
+[
+  {
+    "id": 1786559561490088,
+    "key": "x-csrf-token",
+    "value": "694029e66c9b3d93e1a8c0b4e85e32fca2807defad81b54430b417f3baa7832d",
+    "isEnabled": true,
+    "description": "",
+    "dataType": "string"
+  }
+]

@@ -1,0 +1,10 @@
+{
+  "$schema": "https://assets.requestly.com/local/v1.14.0/metadata.json",
+  "type": "api",
+  "entryType": "http",
+  "id": "da6ff8aa-8eda-4a7f-a588-6e6c89d22f6a",
+  "rank": "",
+  "url": "{{API_URL}}/auth/csrf-token",
+  "method": "GET",
+  "contentType": "none"
+}
