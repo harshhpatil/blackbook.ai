@@ -4,7 +4,7 @@ import { createLimiter } from '../../../core/middlewares/rateLimiter.middleware.
 // 1. Login Limiter: Strict. Prevents credential stuffing and brute-force guessing.
 export const loginLimiter = createLimiter('login', {
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5,
+  max: 20,
   message: { message: 'Too many login attempts, please try again after 15 minutes' },
 });
 

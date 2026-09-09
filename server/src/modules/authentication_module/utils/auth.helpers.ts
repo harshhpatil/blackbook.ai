@@ -52,26 +52,22 @@ export async function recordAudit({
   }
 }
 
+import { AppError } from '../../../core/middlewares/errorHandeler.middleware.ts';
+
 /**
  * @class AuthError
- * @extends Error
+ * @extends AppError
  * @description Custom error class for authentication-related failures.
  * Allows the global error handler to return specific HTTP status codes (e.g., 401, 403).
  */
-export class AuthError extends Error {
-  public statusCode: number;
-  public status: number;
-
+export class AuthError extends AppError {
   /**
    * @param {string} message - The error message to return to the client.
    * @param {number} [statusCode=500] - The HTTP status code associated with the error.
    */
   constructor(message: string, statusCode: number = 500) {
-    super(message);
-    this.statusCode = statusCode;
-    this.status = statusCode;
-
-    // Setting the prototype explicitly to maintain the correct instance of the error class in TypeScript
+    super(statusCode, message);
+    this.name = 'AuthError';
     Object.setPrototypeOf(this, AuthError.prototype);
   }
 }

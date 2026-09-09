@@ -16,7 +16,7 @@
   "include": [
     "src/**/*",
     "src/tests"
-  ],
+, "test-r2.ts"  ],
   "exclude": [
     "node_modules",
     "dist"

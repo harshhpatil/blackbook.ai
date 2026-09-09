@@ -8,6 +8,7 @@ import { env } from './core/config/env.ts';
 import { createLogger } from './core/lib/logger.ts';
 import { verifyEmailConnection } from './core/utils/email.ts';
 
+// implementing logger here
 const log = createLogger('api');
 
 let server: http.Server;

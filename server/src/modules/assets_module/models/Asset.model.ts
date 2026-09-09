@@ -1,6 +1,6 @@
 import mongoose, { Document, Schema } from 'mongoose';
 
-export type AssetKind = 'template' | 'source' | 'export-docx' | 'export-pdf';
+export type AssetKind = 'template' | 'source' | 'raw' | 'export-docx' | 'export-pdf';
 
 /**
  * @interface IAsset
@@ -35,7 +35,7 @@ const AssetSchema = new Schema<IAsset>(
     key: { type: String, required: true, unique: true },
     kind: {
       type: String,
-      enum: ['template', 'source', 'export-docx', 'export-pdf'],
+      enum: ['template', 'source', 'raw', 'export-docx', 'export-pdf'],
       required: true,
       index: true,
     },

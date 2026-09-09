@@ -7,6 +7,19 @@ import {
   generateGeminiJson, 
   GeminiGenerationError 
 } from '../services/gemini.service.ts';
+import { docmorphClient } from '../services/docmorphClient.service.ts';
+
+export function trainAnalyzeWithDocMorph(file: Express.Multer.File) {
+  return docmorphClient.trainAnalyze(file);
+}
+
+export function trainConfirmWithDocMorph(body: {
+  filename: string;
+  approvedMapping: Record<string, string>;
+  templateName?: string;
+}) {
+  return docmorphClient.trainConfirm(body);
+}
 
 const TRAINER_PROMPT = `You are analyzing a FILLED document to turn it into a reusable
 template. This could be an academic report, a black book, a letter, an invoice, a

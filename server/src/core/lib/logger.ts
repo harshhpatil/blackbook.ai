@@ -33,7 +33,10 @@ const configuredRedactPaths =
  * Strictly disabled in production to maximize performance and output machine-readable JSON 
  * for log aggregators (e.g., AWS CloudWatch, Datadog).
  */
-const usePrettyLogs = process.env.LOG_PRETTY_PRINT ?? process.env.NODE_ENV === 'development';
+const usePrettyLogs =
+  process.env.LOG_PRETTY_PRINT === 'true' ||
+  (process.env.LOG_PRETTY_PRINT === undefined &&
+    process.env.NODE_ENV === 'development');
 
 const loggerOptions: LoggerOptions = {
   level: process.env.LOG_LEVEL,

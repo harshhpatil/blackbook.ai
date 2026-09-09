@@ -14,6 +14,8 @@ import {
   logoutAllSessions,
   resetPassword,
   googleLogin,
+  sendOtpHandler,
+  verifyOtpHandler,
 } from './controllers/auth.controller.ts';
 import { authenticate } from './middlewares/auth.middleware.ts';
 import {
@@ -23,6 +25,8 @@ import {
   forgotPasswordSchema, // Added this since you use it below
   resetPasswordSchema,
   googleOAuthSchema,
+  sendOtpSchema,
+  verifyOtpSchema,
 } from './schemas/auth.validation.ts';
 
 // 2. Global Core Imports (Rate Limiters, CSRF, Validation Engine)
@@ -87,6 +91,20 @@ router.post(
 );
 
 router.get('/verify-email', verifyEmailLimiter, verifyEmail);
+
+router.post(
+  '/send-otp',
+  csrfProtection,
+  validate(sendOtpSchema),
+  sendOtpHandler
+);
+
+router.post(
+  '/verify-otp',
+  csrfProtection,
+  validate(verifyOtpSchema),
+  verifyOtpHandler
+);
 
 router.post(
   '/forgot-password',

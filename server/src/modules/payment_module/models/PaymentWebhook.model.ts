@@ -56,8 +56,6 @@ const schema = new Schema<IPaymentWebhookEvent>(
   }
 );
 
-// Index for instant idempotency checks when a webhook hits your endpoint
-schema.index({ providerEventId: 1 });
 // Index to quickly query failed webhooks if you ever write a chron job to retry them
 schema.index({ status: 1 });
 

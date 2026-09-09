@@ -20,8 +20,13 @@ import paymentRoutes from './modules/payment_module/payment.routes.ts';
 import templateRoutes from './modules/template_engine_module/template.routes.ts';
 import assetRoutes from './modules/assets_module/asset.routes.ts';
 import projectRoutes from './modules/project_module/project.routes.ts';
+import userRoutes from './modules/user_profile_module/user.routes.ts';
+import notificationRoutes from './modules/notification_module/notification.routes.ts';
+import creditsRoutes from './modules/credits_module/credits.routes.ts';
+import adminRoutes from './modules/admin_module/admin.routes.ts';
 
 const app: Application = express();
+const developmentLocalhostOrigin = /^http:\/\/localhost:[0-9]+$/;
 
 app.use(requestLogger); // global request logging middleware
 
@@ -37,8 +42,17 @@ app.use(globalApiLimiter); // Prevents brute-force/DDoS on the API layer
 app.use(
   cors({
     origin(origin, callback) {
-      // ADDED THE TEST BYPASS HERE:
-      if (env.NODE_ENV === 'test' || !origin || isAllowedOrigin(origin)) {
+      const isDevelopmentLocalhost =
+        env.NODE_ENV === 'development' &&
+        !!origin &&
+        developmentLocalhostOrigin.test(origin);
+
+      if (
+        env.NODE_ENV === 'test' ||
+        !origin ||
+        isAllowedOrigin(origin) ||
+        isDevelopmentLocalhost
+      ) {
         return callback(null, true);
       }
       return callback(new Error('Origin is not allowed by CORS'));
@@ -75,6 +89,10 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/payment', paymentRoutes);
 app.use('/api/v1/assets', assetRoutes);
 app.use('/api/v1/projects', projectRoutes);
+app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/credits', creditsRoutes);
+app.use('/api/v1/admin', adminRoutes);
 
 // global error handler middleware
 app.use(errorHandler);

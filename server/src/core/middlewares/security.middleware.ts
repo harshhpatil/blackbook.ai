@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { createLogger } from '../lib/logger.ts';
+import { env } from "../config/env.ts"
 
 const log = createLogger('security-middleware');
 
@@ -13,8 +14,9 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  * (Assuming env.ALLOWED_ORIGINS is exported as an array of strings from env.ts)
  */
 const allowedOrigins = new Set(
-  process.env.ALLOWED_ORIGINS ? process.env.ALLOWED_ORIGINS.split(',') : []
+  env.ALLOWED_ORIGINS ? env.ALLOWED_ORIGINS.split(',') : []
 );
+const developmentLocalhostOrigin = /^http:\/\/localhost:[0-9]+$/;
 
 
 /**
@@ -25,7 +27,10 @@ export const isAllowedOrigin = (origin?: string): boolean => {
   if (!origin) {
     return true;
   }
-  return allowedOrigins.has(origin);
+  return (
+    allowedOrigins.has(origin) ||
+    (env.NODE_ENV === 'development' && developmentLocalhostOrigin.test(origin))
+  );
 };
 
 /**

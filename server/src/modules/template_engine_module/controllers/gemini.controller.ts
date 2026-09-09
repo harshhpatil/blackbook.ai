@@ -4,6 +4,32 @@ import {
   generateGeminiJson,
   GeminiGenerationError,
 } from '../services/gemini.service.ts';
+import { docmorphClient } from '../services/docmorphClient.service.ts';
+
+export function generateReportWithDocMorph(body: {
+  templateFilename: string;
+  rawFilename?: string;
+  rawText?: string;
+  includeDiagrams?: boolean;
+}) {
+  return docmorphClient.generateReport(body);
+}
+
+export function analyzeImageWithDocMorph(file: Express.Multer.File, imageName?: string) {
+  return docmorphClient.analyzeImage(file, imageName);
+}
+
+export function generateDiagramsWithDocMorph(body: { rawFilename?: string; rawText?: string }) {
+  return docmorphClient.generateDiagrams(body);
+}
+
+export function refineDiagramWithDocMorph(body: {
+  currentMermaid: string;
+  instruction: string;
+  rawText?: string;
+}) {
+  return docmorphClient.refineDiagram(body);
+}
 
 /**
  * @function buildPrompt

@@ -20,8 +20,9 @@ export async function extractText(filePath: string): Promise<string> {
     // Non-blocking read
     const buffer = await fs.readFile(filePath);
     
-    // Correct standard pdf-parse syntax
-    const data = await (pdfParse as unknown).default(buffer);
+    // Robust ES module / CommonJS interop for pdf-parse
+    const parse = (pdfParse as any).default || pdfParse;
+    const data = await parse(buffer);
     return data.text;
   }
 

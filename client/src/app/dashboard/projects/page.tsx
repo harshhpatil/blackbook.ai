@@ -2,37 +2,33 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Plus, FolderOpen, Search } from "lucide-react";
+import { Plus, FolderOpen, Search, Trash2, Calendar, FileText } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
+import { toast } from "sonner";
+import { api } from "@/lib/api-client";
 
-interface Project {
-  id: number;
-  name: string;
-  type: string;
-  status: string;
-  branch: string | null;
-  semester: string | null;
+interface ProjectItem {
+  _id: string;
+  title: string;
+  status: "draft" | "processing" | "completed" | "failed";
+  contentData?: Record<string, any>;
   createdAt: string;
+  updatedAt: string;
 }
 
 const statusColors: Record<string, "default" | "primary" | "secondary" | "success" | "warning" | "destructive"> = {
   draft: "secondary",
-  uploading: "warning",
-  extracting: "warning",
-  analyzing: "primary",
-  planning: "primary",
-  generating: "primary",
-  validating: "primary",
+  processing: "warning",
   completed: "success",
   failed: "destructive",
 };
 
 export default function ProjectsPage() {
-  const [projects, setProjects] = useState<Project[]>([]);
+  const [projects, setProjects] = useState<ProjectItem[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
@@ -42,18 +38,33 @@ export default function ProjectsPage() {
 
   async function fetchProjects() {
     try {
-      const res = await fetch("/api/projects?limit=50");
-      const json = await res.json();
-      setProjects(json.data || []);
-    } catch (error) {
-      console.error("Failed to fetch projects", error);
+      setLoading(true);
+      const res = await api.projects.getProjects();
+      setProjects(res.projects || []);
+    } catch (error: any) {
+      toast.error(error.message || "Failed to fetch projects");
     } finally {
       setLoading(false);
     }
   }
 
+  async function handleDeleteProject(id: string, e: React.MouseEvent) {
+    e.stopPropagation();
+    e.preventDefault();
+
+    if (!confirm("Are you sure you want to delete this project?")) return;
+
+    try {
+      await api.projects.deleteProject(id);
+      setProjects((prev) => prev.filter((p) => p._id !== id));
+      toast.success("Project deleted successfully");
+    } catch (error: any) {
+      toast.error(error.message || "Failed to delete project");
+    }
+  }
+
   const filtered = projects.filter((p) =>
-    p.name.toLowerCase().includes(search.toLowerCase())
+    (p.title || "").toLowerCase().includes(search.toLowerCase())
   );
 
   return (
@@ -103,7 +114,7 @@ export default function ProjectsPage() {
           <p className="mt-1 text-sm text-white/30">
             {search
               ? "Try a different search term."
-              : "Create your first project to get started."}
+              : "Create your first project workspace to start generating documentation."}
           </p>
           {!search && (
             <Link href="/dashboard/projects/new" className="mt-6">
@@ -118,42 +129,38 @@ export default function ProjectsPage() {
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((project, index) => (
             <motion.div
-              key={project.id}
+              key={project._id}
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: index * 0.03 }}
             >
-              <Link href={`/dashboard/projects/${project.id}`}>
-                <Card className="cursor-pointer transition-all hover:border-white/20 hover:bg-[#161616] h-full">
+              <Link href={`/dashboard/projects/${project._id}`}>
+                <Card className="cursor-pointer transition-all hover:border-white/20 hover:bg-[#161616] h-full flex flex-col justify-between group">
                   <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <CardTitle className="text-base text-white">
-                        {project.name}
+                    <div className="flex items-start justify-between gap-2">
+                      <CardTitle className="text-base text-white group-hover:text-blue-400 transition-colors line-clamp-1">
+                        {project.title}
                       </CardTitle>
-                      <Badge
-                        variant={statusColors[project.status] || "default"}
-                      >
+                      <Badge variant={statusColors[project.status] || "default"}>
                         {project.status}
                       </Badge>
                     </div>
                   </CardHeader>
-                  <CardContent>
-                    <div className="flex items-center gap-3 text-xs text-white/40">
-                      {project.type && (
-                        <span className="rounded-full border border-[#222] px-2 py-0.5 capitalize">
-                          {project.type}
+                  <CardContent className="space-y-4">
+                    <div className="flex items-center justify-between text-xs text-white/40">
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="h-3.5 w-3.5" />
+                        <span>
+                          {new Date(project.updatedAt).toLocaleDateString()}
                         </span>
-                      )}
-                      {project.branch && (
-                        <span className="rounded-full border border-[#222] px-2 py-0.5">
-                          {project.branch}
-                        </span>
-                      )}
-                      {project.semester && (
-                        <span className="rounded-full border border-[#222] px-2 py-0.5">
-                          Sem {project.semester}
-                        </span>
-                      )}
+                      </div>
+                      <button
+                        onClick={(e) => handleDeleteProject(project._id, e)}
+                        className="p-1 rounded text-white/30 hover:text-red-400 hover:bg-red-500/10 transition-colors"
+                        title="Delete project"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
                     </div>
                   </CardContent>
                 </Card>

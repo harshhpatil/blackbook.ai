@@ -18,6 +18,9 @@ import {
   extractPlaceholders,
   fillTemplate,
 } from '../controllers/template.controller.ts';
+import { deductCredits } from '../../credits_module/services/credits.service.ts';
+import { createAndSendNotification } from '../../notification_module/services/notification.service.ts';
+import { env } from '../../../core/config/env.ts';
 
 const DOCX_CONTENT_TYPE =
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
@@ -95,7 +98,7 @@ export async function processGenerationJob(
       _id: job.sourceAsset,
       owner: job.user,
       project: project._id,
-      kind: 'source',
+      kind: { $in: ['source', 'raw'] },
     }),
   ]);
 
@@ -161,6 +164,10 @@ export async function processGenerationJob(
       // Graceful degradation: A DOCX is still a successful generation if LibreOffice/PDF conversion fails.
     }
 
+    // Deduct credits for the generation
+    const cost = env.GENERATION_CREDIT_COST || 1;
+    await deductCredits(job.user.toString(), cost, `Document generation for project '${project.title}'`);
+
     // Finalize Project Success
     project.status = 'completed';
     project.contentData = data;
@@ -177,6 +184,15 @@ export async function processGenerationJob(
       ...(pdfAsset ? { pdfAsset: pdfAsset._id } : {}),
     };
     await job.save();
+
+    // Send real-time notification
+    await createAndSendNotification({
+      userId: job.user.toString(),
+      title: 'Document Generation Complete',
+      message: `Your document for '${project.title}' was successfully generated.`,
+      type: 'success',
+      link: `/projects/${project._id}`,
+    }).catch(() => undefined);
   } catch (error) {
     const message =
       error instanceof Error
@@ -190,6 +206,14 @@ export async function processGenerationJob(
     job.status = 'failed';
     job.error = message;
     await job.save().catch(() => undefined);
+
+    await createAndSendNotification({
+      userId: job.user.toString(),
+      title: 'Document Generation Failed',
+      message: `Document generation for '${project.title}' failed: ${message}`,
+      type: 'error',
+      link: `/projects/${project._id}`,
+    }).catch(() => undefined);
 
     throw error;
   } finally {

@@ -48,22 +48,42 @@ export default function errorHandler(
 
   void _next;
 
-  // Handle Known Operational Errors
-  if (err instanceof AppError) {
-    // Safely fallback to global logger if request-scoped logger isn't available
+  // Handle Known Operational Errors or AppErrors
+  const statusCode =
+    err instanceof AppError
+      ? err.statusCode
+      : (err as any).statusCode || (err as any).status;
+
+  if (statusCode && typeof statusCode === 'number') {
     const logInstance = req.log || log;
 
     logInstance.warn(
       {
         err,
-        statusCode: err.statusCode,
+        statusCode,
         path: req.originalUrl,
         requestId: req.id,
       },
       'Operational error handled'
     );
 
-    return res.status(err.statusCode).json({
+    return res.status(statusCode).json({
+      status: 'error',
+      message: err.message,
+    });
+  }
+
+  // Handle Mongoose CastError (e.g. invalid ObjectId format)
+  if (err.name === 'CastError') {
+    return res.status(400).json({
+      status: 'error',
+      message: 'Invalid ID format',
+    });
+  }
+
+  // Handle Mongoose ValidationError
+  if (err.name === 'ValidationError') {
+    return res.status(400).json({
       status: 'error',
       message: err.message,
     });
@@ -72,6 +92,9 @@ export default function errorHandler(
   // Handle Unexpected System Crashes
   // We use error-level logging here because unhandled exceptions require immediate developer attention.
   const logInstance = req.log || log;
+  console.error(
+    `[UnhandledError] ${err.message}\n${err.stack || '(no stack available)'}`
+  );
   logInstance.error(
     {
       err,

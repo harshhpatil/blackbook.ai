@@ -90,3 +90,28 @@ export const googleOAuthSchema = z.object({
     token: z.string().min(1, 'Token cannot be empty'),
   }),
 });
+
+/**
+ * Schema for sending OTP
+ */
+export const sendOtpSchema = z.object({
+  body: z.object({
+    mobileNumber: z
+      .string()
+      .min(1, 'Mobile number is required')
+      .regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format'),
+  }),
+});
+
+/**
+ * Schema for verifying OTP
+ */
+export const verifyOtpSchema = z.object({
+  body: z.object({
+    mobileNumber: z
+      .string()
+      .min(1, 'Mobile number is required')
+      .regex(/^\+?[1-9]\d{1,14}$/, 'Invalid phone number format'),
+    otp: z.string().length(6, 'OTP must be exactly 6 digits'),
+  }),
+});

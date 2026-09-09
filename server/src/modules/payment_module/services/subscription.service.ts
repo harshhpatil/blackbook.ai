@@ -2,6 +2,7 @@ import mongoose, { ClientSession } from 'mongoose';
 import { User } from '../../authentication_module/models/Users.model.ts'; 
 import { SubscriptionHistory } from '../models/SubscriptionHistory.model.ts';
 import { createLogger } from '../../../core/lib/logger.ts';
+import { addCredits } from '../../credits_module/services/credits.service.ts';
 
 const log = createLogger('subscription-service');
 
@@ -12,6 +13,12 @@ type ActionType =
   | 'renewal'
   | 'admin_grant'
   | 'cancellation';
+
+const creditsForPurchase = (purpose: string, plan: PlanTier): number => {
+  const packCredits = purpose.match(/credits_(\d+)/)?.[1];
+  if (packCredits) return Number(packCredits);
+  return { none: 0, normal: 10, pro: 50, premium: 100 }[plan];
+};
 
 /**
  * @function changeUserPlan
@@ -29,7 +36,8 @@ export async function changeUserPlan(
   newPlan: PlanTier,
   action: ActionType,
   reference: string,
-  mongoSession: ClientSession
+  mongoSession: ClientSession,
+  purpose = ''
 ): Promise<void> {
   // 1. Fetch the user within the current transaction session
   const user = await User.findById(userId).session(mongoSession);
@@ -59,6 +67,17 @@ export async function changeUserPlan(
     ],
     { session: mongoSession }
   );
+
+  const credits = creditsForPurchase(purpose, newPlan);
+  if (credits > 0) {
+    await addCredits(
+      userId.toString(),
+      credits,
+      'purchase',
+      `Purchase ${purpose || newPlan} fulfilled`,
+      mongoSession
+    );
+  }
 
   log.info(
     { userId, oldPlan, newPlan, action, reference },

@@ -142,19 +142,28 @@ export async function updateProject(
   }
 }
 
-export const deleteProject = async (req: Request, res: Response) => {
-  const { projectId } = req.params;
+export const deleteProject = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { projectId } = req.params;
 
-  // Find and delete the project. Make sure it belongs to the logged-in user!
-  const deleted = await Project.findOneAndDelete({
-    _id: projectId,
-    userId: req.user.id,
-  });
+    if (!isValidObjectId(projectId)) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
 
-  if (!deleted) {
-    return res.status(404).json({ message: 'Project not found' });
+    // Find and delete the project. Make sure it belongs to the logged-in user!
+    const deleted = await Project.findOneAndDelete({
+      _id: projectId,
+      userId: req.user!.id,
+    });
+
+    if (!deleted) {
+      return res.status(404).json({ message: 'Project not found' });
+    }
+
+    // Return a 200 OK or 204 No Content
+    return res.status(200).json({ message: 'Project deleted successfully' });
+
+  } catch (error) {
+    next(error); 
   }
-
-  // Return a 200 OK or 204 No Content
-  return res.status(200).json({ message: 'Project deleted successfully' });
 };

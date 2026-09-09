@@ -63,8 +63,9 @@ export async function processRazorpayWebhook(
   parsedBody: unknown,
   payloadHash: string
 ): Promise<void> {
-  const providerEventId = parsedBody.id;
-  const eventType = parsedBody.event;
+  const body = (parsedBody ?? {}) as Record<string, any>;
+  const providerEventId = body.id;
+  const eventType = body.event;
 
   // 1. Idempotency Check: Did we already process this exact webhook?
   const existingEvent = await PaymentWebhookEvent.findOne({ providerEventId });
@@ -92,9 +93,9 @@ export async function processRazorpayWebhook(
 
       // 3. Process the 'order.paid' event (Razorpay confirms the money is secure)
       if (eventType === 'order.paid') {
-        const orderPayload = parsedBody.payload.order.entity;
-        const razorpayOrderId = orderPayload.id;
-        const paymentId = parsedBody.payload.payment?.entity?.id || 'unknown';
+        const orderPayload = body.payload?.order?.entity;
+        const razorpayOrderId = orderPayload?.id;
+        const paymentId = body.payload?.payment?.entity?.id || 'unknown';
 
         // Find our internal pending order
         const order = await PaymentOrder.findOne({
@@ -115,13 +116,24 @@ export async function processRazorpayWebhook(
             order.planPurchased,
             'upgrade',
             paymentId,
-            mongoSession
+            mongoSession,
+            order.purpose
           );
         } else {
           log.warn(
             { razorpayOrderId },
             'Paid webhook received for unknown or already paid order'
           );
+        }
+      } else if (eventType === 'payment.failed') {
+        const razorpayOrderId = body.payload?.payment?.entity?.order_id;
+        if (razorpayOrderId) {
+          await PaymentOrder.updateOne(
+            { razorpayOrderId, status: { $ne: 'paid' } },
+            { $set: { status: 'failed' } },
+            { session: mongoSession }
+          );
+          log.info({ razorpayOrderId }, 'Marked order as failed due to payment.failed webhook');
         }
       }
 

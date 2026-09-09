@@ -56,24 +56,10 @@ const compileTemplate = async (
     const missingVariables = templateVariables.filter(
       (v) => !providedVariables.includes(v)
     );
-    const redundantVariables = providedVariables.filter(
-      (v) => !templateVariables.includes(v)
-    );
 
-    if (missingVariables.length > 0 || redundantVariables.length > 0) {
-      const errors: string[] = [];
-      if (missingVariables.length > 0) {
-        errors.push(
-          `Missing: ${missingVariables.map((v) => `{{${v}}}`).join(', ')}`
-        );
-      }
-      if (redundantVariables.length > 0) {
-        errors.push(
-          `Redundant: ${redundantVariables.map((v) => `"${v}"`).join(', ')}`
-        );
-      }
+    if (missingVariables.length > 0) {
       throw new Error(
-        `Variable validation failed for "${safeFilename}":\n${errors.join('\n')}`
+        `Variable validation failed for "${safeFilename}": Missing: ${missingVariables.map((v) => `{{${v}}}`).join(', ')}`
       );
     }
 

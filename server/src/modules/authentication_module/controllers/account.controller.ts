@@ -3,7 +3,7 @@ import crypto from 'node:crypto';
 import mongoose from 'mongoose';
 import { IUser, User } from '../models/Users.model.ts';
 import { IEmailOutbox } from '../../system_module/models/EmailOutbox.model.ts';
-import { hashToken } from '../services/token.service.js';
+import { hashToken } from '../services/token.service.ts';
 import { AuthError, recordAudit } from '../utils/auth.helpers.ts';
 import { env } from '../../../core/config/env.ts';
 import {
@@ -182,6 +182,10 @@ export async function verifyEmail(
     if (outboxEvent) {
       await publishEmailOutboxEvent(outboxEvent);
     }
+
+    // Grant initial welcome signup bonus credits
+    const { addCredits } = await import('../../credits_module/services/credits.service.ts');
+    await addCredits(verifiedUser._id.toString(), 10, 'signup_bonus', 'Welcome Signup Bonus Credits').catch(() => undefined);
 
     await recordAudit({
       user: verifiedUser._id,

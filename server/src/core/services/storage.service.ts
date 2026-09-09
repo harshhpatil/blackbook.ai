@@ -1,10 +1,10 @@
 import crypto from 'node:crypto';
 import { Readable } from 'node:stream';
-import { 
-  DeleteObjectCommand, 
-  GetObjectCommand, 
-  PutObjectCommand, 
-  S3Client 
+import {
+  DeleteObjectCommand,
+  GetObjectCommand,
+  PutObjectCommand,
+  S3Client
 } from '@aws-sdk/client-s3';
 import { env } from '../config/env.ts';
 import { createLogger } from '../lib/logger.ts';
@@ -16,11 +16,11 @@ const log = createLogger('storage-service');
  */
 const r2 = new S3Client({
   // Cloudflare R2 strictly requires the region to be 'auto'
-  region: 'auto', 
+  region: 'auto',
   // R2 endpoint format: https://<ACCOUNT_ID>.r2.cloudflarestorage.com
   endpoint: `https://${env.CLOUDFLARE_ACCOUNT_ID}.r2.cloudflarestorage.com`,
   credentials: {
-    accessKeyId: env.R2_ACCESS_KEY_ID!,
+    accessKeyId: env.R2_ACCESS_KEY_ID ?? env.R2_ACCESS_KEY!,
     secretAccessKey: env.R2_SECRET_ACCESS_KEY!,
   },
 });
@@ -42,10 +42,10 @@ export const createAssetKey = (
 ): string => {
   // Strip out any potentially dangerous characters from the extension
   const safeExtension = extension.replace(/[^a-z0-9.]/gi, '').toLowerCase();
-  const prefix = projectId 
-    ? `users/${userId}/projects/${projectId}` 
+  const prefix = projectId
+    ? `users/${userId}/projects/${projectId}`
     : `users/${userId}`;
-    
+
   return `${prefix}/${kind}/${crypto.randomUUID()}${safeExtension}`;
 };
 
@@ -66,7 +66,7 @@ export async function uploadAsset(
         ContentType: contentType,
       })
     );
-    
+
     log.info({ key, contentType }, 'Asset uploaded successfully to R2');
   } catch (error) {
     log.error({ key, error }, 'Failed to upload asset to R2');
@@ -81,9 +81,9 @@ export async function uploadAsset(
 export async function getAssetStream(key: string): Promise<Readable> {
   try {
     const response = await r2.send(
-      new GetObjectCommand({ 
-        Bucket: env.R2_BUCKET_NAME, 
-        Key: key 
+      new GetObjectCommand({
+        Bucket: env.R2_BUCKET_NAME,
+        Key: key
       })
     );
 
@@ -104,12 +104,12 @@ export async function getAssetStream(key: string): Promise<Readable> {
 export async function deleteAsset(key: string): Promise<void> {
   try {
     await r2.send(
-      new DeleteObjectCommand({ 
-        Bucket: env.R2_BUCKET_NAME, 
-        Key: key 
+      new DeleteObjectCommand({
+        Bucket: env.R2_BUCKET_NAME,
+        Key: key
       })
     );
-    
+
     log.info({ key }, 'Asset deleted successfully from R2');
   } catch (error) {
     log.error({ key, error }, 'Failed to delete asset from R2');

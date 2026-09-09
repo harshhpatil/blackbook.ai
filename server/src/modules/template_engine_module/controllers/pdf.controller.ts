@@ -1,6 +1,11 @@
 import fs from 'node:fs/promises';
 import { promisify } from 'node:util';
 import libre from 'libreoffice-convert';
+import { docmorphClient } from '../services/docmorphClient.service.ts';
+
+export function getDocMorphHealth() {
+  return docmorphClient.getHealth();
+}
 
 const convertAsync = promisify(libre.convert);
 

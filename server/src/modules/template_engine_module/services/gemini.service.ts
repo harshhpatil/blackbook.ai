@@ -134,7 +134,7 @@ export async function generateGeminiJson({
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
-          responseJsonSchema,
+          responseSchema: responseJsonSchema,
           temperature: 0,
           maxOutputTokens: env.GEMINI_MAX_OUTPUT_TOKENS,
           httpOptions: { timeout: env.GEMINI_TIMEOUT_MS },

@@ -85,9 +85,7 @@ const paymentOrderSchema = new Schema<IPaymentOrder>(
   }
 );
 
-// Indexes optimized for Razorpay webhook lookups and idempotency checks
-paymentOrderSchema.index({ razorpayOrderId: 1 });
-paymentOrderSchema.index({ idempotencyKey: 1 });
+// Compound index for authenticated order history and status lookups
 paymentOrderSchema.index({ user: 1, status: 1 });
 
 export const PaymentOrder = mongoose.model<IPaymentOrder>(

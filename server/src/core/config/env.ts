@@ -87,6 +87,7 @@ const storageConfig = z.object({
     .string()
     .min(1, 'R2 Access Key ID is required')
     .optional(),
+  R2_ACCESS_KEY: z.string().min(1).optional(),
   R2_SECRET_ACCESS_KEY: z.string().min(1, 'R2 Secret Key is required'),
   R2_BUCKET_NAME: z.string().min(1, 'R2 Bucket Name is required'),
   R2_ENDPOINT: z.string().url('R2 Endpoint must be a valid URL'),
@@ -126,6 +127,10 @@ const aiConfig = z.object({
   GOOGLE_CLIENT_ID: z.string().min(1),
 });
 
+const docMorphConfig = z.object({
+  DOCMORPH_SERVICE_URL: z.string().url().default('http://localhost:5002'),
+});
+
 /**
  * Credit system and pricing configuration.
  */
@@ -133,6 +138,12 @@ const billingConfig = z.object({
   GENERATION_CREDIT_COST: z.coerce.number().int().default(1),
   CREDIT_PACKAGES_JSON: z.string().default('{}'),
 });
+
+const twilioConfig = z.object({
+  TWILIO_ACCOUNT_SID: z.string().min(1),
+  TWILIO_AUTH_TOKEN: z.string().min(1),
+  TWILIO_PHONE_NUMBER: z.string().min(1).optional(),
+})
 
 /**
  * The Master Environment Schema.
@@ -148,7 +159,9 @@ const envSchema = z.object({
   ...storageConfig.shape,
   ...loggingConfig.shape,
   ...aiConfig.shape,
+  ...docMorphConfig.shape,
   ...billingConfig.shape,
+  ...twilioConfig.shape,
 });
 
 const parsedEnv = envSchema.safeParse(process.env);

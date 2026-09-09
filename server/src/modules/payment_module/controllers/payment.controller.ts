@@ -161,7 +161,8 @@ export async function verifyPaymentController(
         order.planPurchased,
         'upgrade',
         razorpay_payment_id,
-        mongoSession
+        mongoSession,
+        order.purpose
       );
     });
     await mongoSession.endSession();
@@ -269,6 +270,11 @@ export async function getSingleOrderController(
 ) {
   try {
     const { orderId } = req.params;
+    if (!mongoose.isValidObjectId(orderId)) {
+      return res
+        .status(404)
+        .json({ success: false, message: 'Payment order not found' });
+    }
     const order = await PaymentOrder.findById(orderId);
 
     if (!order) {

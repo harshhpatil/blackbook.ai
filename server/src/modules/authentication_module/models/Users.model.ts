@@ -29,6 +29,17 @@ export interface IUser extends Document {
   isEmailVerified: boolean;
   /** Indicates if the user has verifies their mobile number */
   isMobileVerified: boolean;
+  avatarUrl?: string;
+  company?: string;
+  collegeName?: string;
+  branch?: string;
+  guideName?: string;
+  bio?: string;
+  timezone?: string;
+  notificationPreferences?: {
+    emailNotifications: boolean;
+    smsNotifications: boolean;
+  };
   /** Token used for email verification processes */
   emailVerificationToken?: string;
   /** Expiration date for the email verification token */
@@ -66,7 +77,6 @@ const UserSchema: Schema<IUser> = new Schema(
     },
     mobileNumber: {
       type: String,
-      required: true,
       unique: true,
       sparse: true,
     },
@@ -75,9 +85,35 @@ const UserSchema: Schema<IUser> = new Schema(
       trim: true,
       maxlength: 100,
     },
+    avatarUrl: {
+      type: String,
+      trim: true,
+    },
+    company: {
+      type: String,
+      trim: true,
+      maxlength: 100,
+    },
+    collegeName: { type: String, trim: true, maxlength: 200 },
+    branch: { type: String, trim: true, maxlength: 100 },
+    guideName: { type: String, trim: true, maxlength: 100 },
+    bio: {
+      type: String,
+      trim: true,
+      maxlength: 500,
+    },
+    timezone: {
+      type: String,
+      trim: true,
+      maxlength: 50,
+      default: 'UTC',
+    },
+    notificationPreferences: {
+      emailNotifications: { type: Boolean, default: true },
+      smsNotifications: { type: Boolean, default: true },
+    },
     passwordHash: {
       type: String,
-      required: true,
       select: false,
     },
     authProvider: {

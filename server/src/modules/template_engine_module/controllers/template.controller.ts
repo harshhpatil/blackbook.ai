@@ -3,6 +3,11 @@ import path from 'node:path';
 import PizZip from 'pizzip';
 import Docxtemplater from 'docxtemplater';
 import mammoth from 'mammoth';
+import { docmorphClient } from '../services/docmorphClient.service.ts';
+
+export function uploadTemplateToDocMorph(file: Express.Multer.File) {
+  return docmorphClient.uploadTemplate(file);
+}
 
 /**
  * @function extractPlaceholders
@@ -17,7 +22,7 @@ export async function extractPlaceholders(
   templatePath: string
 ): Promise<string[]> {
   const { value: text } = await mammoth.extractRawText({ path: templatePath });
-  const matches = [...text.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)];
+  const matches = [...text.matchAll(/\{\{\s*([\w.-]+)\s*\}\}/g)];
 
   // Deduplicate the extracted field names
   const fieldNames = [...new Set(matches.map((m) => m[1]))];

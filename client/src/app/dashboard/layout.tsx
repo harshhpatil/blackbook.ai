@@ -15,10 +15,14 @@ import {
   ChevronRight,
   Plus,
   LogOut,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/lib/auth-context";
+import { NotificationsPopover } from "@/components/notifications-popover";
 
 const sidebarItems = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/dashboard" },
@@ -33,6 +37,17 @@ const sidebarItems = [
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
+  const { user, credits, logout } = useAuth();
+
+  const getInitials = (name?: string) => {
+    if (!name) return "U";
+    return name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  };
 
   return (
     <div className="flex h-screen bg-[#0A0A0A]">
@@ -90,16 +105,19 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           })}
         </nav>
 
-        {/* User */}
+        {/* User Footer */}
         <div className="border-t border-[#222] p-3">
           <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
             <Avatar className="h-8 w-8">
-              <AvatarFallback className="bg-[#222] text-xs text-white">U</AvatarFallback>
+              {user?.avatarUrl ? <AvatarImage src={user.avatarUrl} alt={user.name} /> : null}
+              <AvatarFallback className="bg-[#222] text-xs text-white">
+                {getInitials(user?.name)}
+              </AvatarFallback>
             </Avatar>
             {!collapsed && (
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-white truncate">User</p>
-                <p className="text-xs text-white/40 truncate">user@email.com</p>
+                <p className="text-sm font-medium text-white truncate">{user?.name || "Guest User"}</p>
+                <p className="text-xs text-white/40 truncate">{user?.email || "Not signed in"}</p>
               </div>
             )}
           </div>
@@ -118,13 +136,27 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               </Button>
             </Link>
           </div>
-          <div className="flex items-center gap-3">
-            <Link href="/">
-              <Button variant="ghost" size="sm">
-                <LogOut className="h-4 w-4 mr-2" />
-                Exit
-              </Button>
+
+          <div className="flex items-center gap-4">
+            {/* Credit Balance Badge */}
+            <Link href="/dashboard/billing">
+              <Badge
+                variant="outline"
+                className="flex items-center gap-1.5 border-[#333] bg-[#161616] px-3 py-1.5 text-xs text-white hover:border-blue-500/50 transition-colors"
+              >
+                <Zap className="h-3.5 w-3.5 text-amber-400 fill-amber-400" />
+                <span>{credits} Credits</span>
+              </Badge>
             </Link>
+
+            {/* Notifications Popover */}
+            <NotificationsPopover />
+
+            {/* Logout button */}
+            <Button variant="ghost" size="sm" onClick={() => logout()} className="text-white/70 hover:text-white">
+              <LogOut className="h-4 w-4 mr-2" />
+              Sign Out
+            </Button>
           </div>
         </header>
 

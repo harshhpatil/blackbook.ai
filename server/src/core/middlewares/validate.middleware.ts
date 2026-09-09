@@ -15,36 +15,53 @@ const log = createLogger('validate-middleware');
  */
 export const validate = (schema: ZodSchema) => {
   return (req: Request, res: Response, next: NextFunction): void => {
-    const result = schema.safeParse(req.body);
+    // Attempt parsing structured { body, query, params } first, fallback to req.body
+    const isBodyWrapped =
+      typeof req.body === 'object' && req.body !== null;
+    const dataToValidate = {
+      body: req.body,
+      query: req.query,
+      params: req.params,
+    };
 
-    if (!result.success) {
-      // Map Zod issues into a clean array of readable error messages
-      const errors = result.error.issues.map((issue) => issue.message);
+    let result = schema.safeParse(dataToValidate);
 
-      // Log the failure for API monitoring (Note: We log the errors, but NOT the
-      // raw req.body, to avoid accidentally logging plain-text passwords or PII)
-      log.warn(
-        {
-          ip: req.ip,
-          path: req.originalUrl,
-          method: req.method,
-          errors,
-        },
-        'Request body validation failed'
-      );
-
-      res.status(400).json({
-        status: 'error',
-        message: 'Request validation failed',
-        errors,
-      });
-      return;
+    if (result.success) {
+      if (result.data && typeof result.data === 'object' && 'body' in result.data) {
+        req.body = (result.data as { body: unknown }).body;
+      } else {
+        req.body = result.data;
+      }
+      return next();
     }
 
-    // Overwrite the request body with the parsed, sanitized data
-    req.body = result.data;
+    // Fallback: try parsing req.body directly if the schema is not wrapped in { body }
+    if (isBodyWrapped) {
+      const fallbackResult = schema.safeParse(req.body);
+      if (fallbackResult.success) {
+        req.body = fallbackResult.data;
+        return next();
+      }
+    }
 
-    next();
+    // Map Zod issues into a clean array of readable error messages
+    const errors = result.error.issues.map((issue) => issue.message);
+
+    log.warn(
+      {
+        ip: req.ip,
+        path: req.originalUrl,
+        method: req.method,
+        errors,
+      },
+      'Request body validation failed'
+    );
+
+    res.status(400).json({
+      status: 'error',
+      message: 'Request validation failed',
+      errors,
+    });
   };
 };
 

@@ -34,9 +34,7 @@ export const createLimiter = (
     // Can be overridden in specific routes (e.g., for authenticated user IDs).
     keyGenerator: (req) => {
       // NOTE: req.ip relies on `app.set('trust proxy', 1)` being configured in Express
-      const rawIp = req.ip ?? 'unknown-ip';
-
-      const safeIp = ipKeyGenerator(rawIp);
+      const safeIp = req.ip ? ipKeyGenerator(req.ip) : 'unknown-ip';
       const email = normalizeEmail(req.body?.email);
 
       return email ? `${safeIp}:${email}` : safeIp;
@@ -51,6 +49,6 @@ export const createLimiter = (
  */
 export const globalApiLimiter = createLimiter('global-api', {
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100,
+  max: 200,
   message: 'Too many requests, please try again later.',
 });

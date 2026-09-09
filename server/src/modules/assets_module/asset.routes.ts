@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authenticate } from '../authentication_module/middlewares/auth.middleware.ts';
-import { downloadAsset } from './controllers/asset.controller.ts';
+import { downloadAsset, getUserAssets, deleteAssetController } from './controllers/asset.controller.ts';
+import { csrfProtection } from '../../core/middlewares/csrf.middleware.ts';
 
 const router = Router();
 
@@ -10,11 +11,8 @@ const router = Router();
  */
 router.use(authenticate);
 
-/**
- * @route GET /:assetId/download
- * @description Downloads a specific file asset (PDF, DOCX, etc.).
- * @access Protected (Owner only)
- */
+router.get('/', getUserAssets);
 router.get('/:assetId/download', downloadAsset);
+router.delete('/:assetId', csrfProtection, deleteAssetController);
 
 export default router;

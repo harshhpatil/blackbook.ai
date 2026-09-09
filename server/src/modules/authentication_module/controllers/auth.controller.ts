@@ -15,4 +15,5 @@ export {
   resetPassword,
 } from './password.controller.ts';
 export { googleLogin } from './oauth.controller.ts';
+export { sendOtpHandler, verifyOtpHandler } from './sms.controller.ts';
 
