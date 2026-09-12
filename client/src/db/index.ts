@@ -2,10 +2,6 @@ import mongoose from "mongoose";
 
 const MONGODB_URI = process.env.MONGODB_URI;
 
-if (!MONGODB_URI) {
-  throw new Error("MONGODB_URI is required");
-}
-
 const globalForMongo = globalThis as typeof globalThis & {
   __mongooseCache?: {
     conn: typeof mongoose | null;
@@ -20,6 +16,10 @@ if (!globalForMongo.__mongooseCache) {
 }
 
 export async function connectDB(): Promise<typeof mongoose> {
+  if (!MONGODB_URI) {
+    throw new Error("MONGODB_URI is required");
+  }
+
   if (cached.conn) return cached.conn;
 
   if (!cached.promise) {

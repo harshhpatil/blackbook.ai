@@ -1,90 +1,100 @@
 import express, { Application, Request, Response } from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import { env } from './config/env.ts';
-import { checkRedisConnection } from './config/redisConnection.ts';
-import { isDbReady } from './config/dbConnection.ts';
+import helmet from 'helmet'; // Added for secure HTTP headers
 
-// importing the global error handler middleware to handle unhandled errors in the application
-import errorHandler from './middlewares/errorHandeler.middleware.ts';
+// importing the configs and middlewares
+import { env } from './core/config/env.ts';
+import errorHandler from './core/middlewares/errorHandeler.middleware.ts';
+import { requestLogger } from './core/middlewares/logger.middleware.ts'; // Fixed path
+import { globalApiLimiter } from './core/middlewares/rateLimiter.middleware.ts'; // Added rate limiter
+import {
+  verifyRequestOrigin,
+  isAllowedOrigin,
+} from './core/middlewares/security.middleware.ts';
 
-// importing the routes fron the routes directory
-import authRoutes from './routes/auth.routes.ts';
+// importing the core routes (Fixed paths to match your `modules` tree)
+import systemRoutes from './modules/system_module/system.routes.ts';
+import authRoutes from './modules/authentication_module/auth.routes.ts';
+import paymentRoutes from './modules/payment_module/payment.routes.ts';
+import templateRoutes from './modules/template_engine_module/template.routes.ts';
+import assetRoutes from './modules/assets_module/asset.routes.ts';
+import projectRoutes from './modules/project_module/project.routes.ts';
+import userRoutes from './modules/user_profile_module/user.routes.ts';
+import notificationRoutes from './modules/notification_module/notification.routes.ts';
+import creditsRoutes from './modules/credits_module/credits.routes.ts';
+import adminRoutes from './modules/admin_module/admin.routes.ts';
 
 const app: Application = express();
-const allowedOrigins = env.corsOrigins;
+const developmentLocalhostOrigin = /^http:\/\/localhost:[0-9]+$/;
 
-if (env.trustProxy) {
-  app.set('trust proxy', env.trustProxy);
+app.use(requestLogger); // global request logging middleware
+
+// server settings
+if (env.TRUST_PROXY) {
+  app.set('trust proxy', env.TRUST_PROXY);
 }
 
-const isAllowedOrigin = (origin?: string): boolean => {
-  if (!origin) return true;
-  return allowedOrigins.includes(origin);
-};
+// global security and parsing middlewares
+app.use(helmet()); // Protects against common web vulnerabilities
+app.use(globalApiLimiter); // Prevents brute-force/DDoS on the API layer
 
-const verifyRequestOrigin = (
-  req: Request,
-  res: Response,
-  next: express.NextFunction
-): void | Response => {
-  if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) {
-    return next();
-  }
-
-  const origin = req.get('origin');
-  if (origin && !isAllowedOrigin(origin)) {
-    return res.status(403).json({ message: 'forbidden origin' });
-  }
-
-  return next();
-};
-
-// middleware
 app.use(
   cors({
     origin(origin, callback) {
-      if (isAllowedOrigin(origin)) {
-        return callback(null, origin ?? false);
-      }
+      const isDevelopmentLocalhost =
+        env.NODE_ENV === 'development' &&
+        !!origin &&
+        developmentLocalhostOrigin.test(origin);
 
+      if (
+        env.NODE_ENV === 'test' ||
+        !origin ||
+        isAllowedOrigin(origin) ||
+        isDevelopmentLocalhost
+      ) {
+        return callback(null, true);
+      }
       return callback(new Error('Origin is not allowed by CORS'));
     },
     credentials: true,
   })
 );
-app.use(express.json());
+
+// parsing middlewares
+// store raw body for webhook verification
+app.use(
+  express.json({
+    verify: (req, _res, buf) => {
+      const expressReq = req as Request;
+
+      if (expressReq.originalUrl.split('?')[0] === '/api/v1/payment/webhook') {
+        expressReq.rawBody = buf;
+      }
+    },
+  })
+);
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(verifyRequestOrigin);
 
-// defining the routes for the application
-app.get('/api/health', (req: Request, res: Response) => {
-  res.status(200).json({
-    status: 'success',
-    message: 'blackbook express app is configured.',
-    timestamp: new Date().toISOString(),
-  });
+app.get('/health', (req: Request, res: Response) => {
+  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-app.get('/api/ready', async (_req: Request, res: Response) => {
-  const mongoReady = isDbReady();
-  const redisReady = await checkRedisConnection();
-  const ready = mongoReady && redisReady;
-
-  return res.status(ready ? 200 : 503).json({
-    status: ready ? 'ready' : 'not_ready',
-    dependencies: {
-      mongo: mongoReady ? 'ready' : 'not_ready',
-      redis: redisReady ? 'ready' : 'not_ready',
-    },
-    timestamp: new Date().toISOString(),
-  });
-});
-
+// application routes
+app.use('/api', systemRoutes);
+app.use('/api/v1/template-engine', templateRoutes);
 app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/payment', paymentRoutes);
+app.use('/api/v1/assets', assetRoutes);
+app.use('/api/v1/projects', projectRoutes);
+app.use('/api/v1/users', userRoutes);
+app.use('/api/v1/notifications', notificationRoutes);
+app.use('/api/v1/credits', creditsRoutes);
+app.use('/api/v1/admin', adminRoutes);
 
-// global error handler middleware to handle unhandled errors in the application
+// global error handler middleware
 app.use(errorHandler);
 
-export default app;
+export default app; // exporting the app for server startup and testing

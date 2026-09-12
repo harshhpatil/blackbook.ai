@@ -1,0 +1,2 @@
+minimumReleaseAgeExclude:
+  - '@aws-sdk/s3-request-presigner@3.1131.0'

@@ -9,9 +9,16 @@
     "esModuleInterop": true,
     "skipLibCheck": true,
     "allowImportingTsExtensions": true,
+    "allowSyntheticDefaultImports": true,
     "rewriteRelativeImportExtensions": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
   },
-  "include": ["src/**/*"],
-  "exclude": ["node_modules", "dist"]
+  "include": [
+    "src/**/*",
+    "src/tests"
+, "test-r2.ts"  ],
+  "exclude": [
+    "node_modules",
+    "dist"
+  ]
 }
