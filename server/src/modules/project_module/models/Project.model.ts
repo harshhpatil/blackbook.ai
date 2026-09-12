@@ -11,8 +11,8 @@ export interface IProject extends Document {
   status: 'draft' | 'processing' | 'completed' | 'failed';
   contentData: Record<string, unknown>;
   downloads: {
-    pdfAsset?: mongoose.Types.ObjectId;
-    docxAsset?: mongoose.Types.ObjectId;
+    pdfUrl?: string;
+    docxUrl?: string;
   };
   lastError?: string;
   createdAt: Date;
@@ -31,8 +31,8 @@ const projectSchema = new Schema<IProject>(
     },
     contentData: { type: Schema.Types.Mixed, default: {} },
     downloads: {
-      pdfAsset: { type: Schema.Types.ObjectId, ref: 'Asset' },
-      docxAsset: { type: Schema.Types.ObjectId, ref: 'Asset' },
+      pdfUrl: { type: String },
+      docxUrl: { type: String },
     },
     lastError: { type: String, maxlength: 1000 },
   },

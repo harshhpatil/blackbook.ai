@@ -4,7 +4,7 @@ import type {
   Options,
   Store,
 } from 'express-rate-limit';
-import { getRedisConnection } from '../config/redisConnection.ts';
+import { getRateLimitRedisConnection } from '../config/redisConnection.ts';
 
 /**
  * Custom Redis store for express-rate-limit.
@@ -19,6 +19,9 @@ export class RedisRateLimitStore implements Store {
 
   constructor(prefix: string) {
     this.prefix = `rate-limit:${prefix}:`;
+    // Establish the dedicated client at application startup, rather than
+    // forcing the first rate-limited request to race the TLS handshake.
+    getRateLimitRedisConnection();
   }
 
   init(options: Options): void {
@@ -26,7 +29,7 @@ export class RedisRateLimitStore implements Store {
   }
 
   async increment(key: string): Promise<IncrementResponse> {
-    const redis = getRedisConnection();
+    const redis = getRateLimitRedisConnection();
     const redisKey = `${this.prefix}${key}`;
 
     const totalHits = await redis.incr(redisKey);
@@ -45,7 +48,7 @@ export class RedisRateLimitStore implements Store {
   }
 
   async decrement(key: string): Promise<void> {
-    const redis = getRedisConnection();
+    const redis = getRateLimitRedisConnection();
     const redisKey = `${this.prefix}${key}`;
 
     const value = await redis.decr(redisKey);
@@ -56,11 +59,11 @@ export class RedisRateLimitStore implements Store {
   }
 
   async resetKey(key: string): Promise<void> {
-    await getRedisConnection().del(`${this.prefix}${key}`);
+    await getRateLimitRedisConnection().del(`${this.prefix}${key}`);
   }
 
   async get(key: string): Promise<ClientRateLimitInfo | undefined> {
-    const redis = getRedisConnection();
+    const redis = getRateLimitRedisConnection();
     const redisKey = `${this.prefix}${key}`;
 
     const [value, ttl] = await Promise.all([

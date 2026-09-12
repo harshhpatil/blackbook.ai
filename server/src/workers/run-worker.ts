@@ -15,9 +15,6 @@ import {
   publishPendingEmailOutbox,
 } from '../core/services/emailQueue.service.ts';
 
-// Template Engine Module (Generation)
-import { generationWorker } from '../modules/template_engine_module/workers/generation.worker.ts';
-import { closeGenerationQueue } from '../modules/template_engine_module/services/generationQueue.service.ts';
 
 const log = createLogger('worker-runtime');
 const EMAIL_OUTBOX_SWEEP_MS = 60_000;
@@ -38,7 +35,7 @@ async function bootstrap() {
       );
     }, EMAIL_OUTBOX_SWEEP_MS);
 
-    log.info('Background workers (Email & AI Generation) started successfully');
+    log.info('Background workers (Email) started successfully');
   } catch (error) {
     log.fatal({ error }, 'Failed to bootstrap background workers');
     process.exit(1);
@@ -62,11 +59,9 @@ const shutdown = async (signal: string): Promise<void> => {
     if (outboxSweepTimer) clearInterval(outboxSweepTimer);
     // 1. Stop accepting new jobs
     await closeEmailQueue();
-    await closeGenerationQueue();
 
     // 2. Wait for active jobs to finish, then close workers
     await emailWorker.close();
-    await generationWorker.close();
 
     // 3. Sever database connections
     await closeRedisConnection();

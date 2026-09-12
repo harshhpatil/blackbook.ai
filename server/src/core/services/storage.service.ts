@@ -6,6 +6,7 @@ import {
   PutObjectCommand,
   S3Client
 } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { env } from '../config/env.ts';
 import { createLogger } from '../lib/logger.ts';
 
@@ -96,6 +97,22 @@ export async function getAssetStream(key: string): Promise<Readable> {
     log.error({ key, error }, 'Failed to retrieve asset stream from R2');
     throw new Error('Storage retrieval failed', { cause: error });
   }
+}
+
+export async function getAssetBuffer(key: string): Promise<Buffer> {
+  const response = await r2.send(
+    new GetObjectCommand({ Bucket: env.R2_BUCKET_NAME, Key: key })
+  );
+  if (!response.Body) throw new Error('R2 response body is missing');
+  return Buffer.from(await response.Body.transformToByteArray());
+}
+
+export async function getAssetDownloadUrl(key: string, expiresIn = 900): Promise<string> {
+  return getSignedUrl(
+    r2,
+    new GetObjectCommand({ Bucket: env.R2_BUCKET_NAME, Key: key }),
+    { expiresIn }
+  );
 }
 
 /**

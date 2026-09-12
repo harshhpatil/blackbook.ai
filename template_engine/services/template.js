@@ -1,20 +1,18 @@
 import fs from "fs";
-import path from "path";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import mammoth from "mammoth";
 
 // Reads ANY .docx template and returns the list of {{field}} placeholder names
-export async function extractPlaceholders(templatePath) {
-  const { value: text } = await mammoth.extractRawText({ path: templatePath });
+export async function extractPlaceholders(templateBuffer) {
+  const { value: text } = await mammoth.extractRawText({ buffer: templateBuffer });
   const matches = [...text.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)];
   const fieldNames = [...new Set(matches.map((m) => m[1]))];
   return fieldNames;
 }
 
-export function fillTemplate(templatePath, textData, diagramsMap = {}, outputFilename) {
-  const content = fs.readFileSync(templatePath, "binary");
-  const zip = new PizZip(content);
+export function fillTemplate(templateBuffer, textData, diagramsMap = {}) {
+  const zip = new PizZip(templateBuffer);
 
   // 1. Inject diagrams directly into DOCX OpenXML structure if diagrams are provided
   if (diagramsMap && Object.keys(diagramsMap).length > 0) {
@@ -32,12 +30,7 @@ export function fillTemplate(templatePath, textData, diagramsMap = {}, outputFil
   doc.render(textData);
 
   const buf = doc.getZip().generate({ type: "nodebuffer" });
-  const outputsDir = path.join(path.dirname(templatePath), "..", "outputs");
-  if (!fs.existsSync(outputsDir)) fs.mkdirSync(outputsDir, { recursive: true });
-
-  const outPath = path.join(outputsDir, outputFilename);
-  fs.writeFileSync(outPath, buf);
-  return outPath;
+  return buf;
 }
 
 function prepareAndInjectDiagrams(zip, diagramsMap) {

@@ -1,18 +1,12 @@
-import { GoogleGenAI } from "@google/genai";
-import { Resvg } from "@resvg/resvg-js";
-import { safeJsonParse } from "./safeJson.js";
-import { getCachedResult, setCachedResult } from "./cache.js";
+import { GoogleGenAI } from '@google/genai';
+import { Resvg } from '@resvg/resvg-js';
+import { safeJsonParse } from './safeJson.js';
+import { getCachedResult, setCachedResult } from './cache.js';
+import { recordGeminiFailure, recordGeminiSuccess } from './geminiStatus.js';
 
-const MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+const MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 
-let _ai = null;
-function getClient() {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY is missing. Add it to server/.env and restart the server.");
-  }
-  if (!_ai) _ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  return _ai;
-}
+import { getClient } from './gemini.js';
 
 const DIAGRAM_SYSTEM_INSTRUCTION = `You are an Elite Academic System Architect, Senior Software Engineer, and Technical Thesis Author.
 Your task is to analyze project notes, research papers, or project descriptions and generate publication-grade, formal engineering diagrams matching standard University Engineering Final Year Black Books.
@@ -57,54 +51,58 @@ CRITICAL MERMAID SYNTAX RULES (MANDATORY TO AVOID PARSER CRASHES):
 - Return ONLY a valid JSON object matching the requested schema.`;
 
 export function sanitizeMermaid(code) {
-  if (!code || typeof code !== "string") return "";
+  if (!code || typeof code !== 'string') return '';
 
   let clean = code
-    .replace(/^```mermaid\s*/i, "")
-    .replace(/^```\s*/, "")
-    .replace(/```$/, "")
+    .replace(/^```mermaid\s*/i, '')
+    .replace(/^```\s*/, '')
+    .replace(/```$/, '')
     .trim();
 
   // Ensure diagram type header exists
   if (
-    !clean.startsWith("flowchart") &&
-    !clean.startsWith("graph") &&
-    !clean.startsWith("sequenceDiagram") &&
-    !clean.startsWith("erDiagram") &&
-    !clean.startsWith("classDiagram") &&
-    !clean.startsWith("stateDiagram")
+    !clean.startsWith('flowchart') &&
+    !clean.startsWith('graph') &&
+    !clean.startsWith('sequenceDiagram') &&
+    !clean.startsWith('erDiagram') &&
+    !clean.startsWith('classDiagram') &&
+    !clean.startsWith('stateDiagram')
   ) {
     clean = `flowchart TD\n${clean}`;
   }
 
-  const lines = clean.split("\n");
+  const lines = clean.split('\n');
   const fixedLines = [];
 
   for (let rawLine of lines) {
     let l = rawLine.trim();
     if (!l) {
-      fixedLines.push("");
+      fixedLines.push('');
       continue;
     }
 
-    if (l.startsWith("%%")) {
+    if (l.startsWith('%%')) {
       fixedLines.push(rawLine);
       continue;
     }
 
     // 1. Fix invalid "actor Name" lines in flowcharts
-    if (l.match(/^actor\s+([\w\d_-]+)/i) && !clean.includes("sequenceDiagram")) {
+    if (
+      l.match(/^actor\s+([\w\d_-]+)/i) &&
+      !clean.includes('sequenceDiagram')
+    ) {
       const match = l.match(/^actor\s+([\w\d_-]+)/i);
       l = `${match[1]}["👤 ${match[1]}"]`;
     }
 
     // 2. Fix duplicate node ID typos like "p2 p2 <--> D3" -> "p2 <--> D3"
-    l = l.replace(/^([\w\d_-]+)\s+\1\s*(<-->|-->|---|-.->|==>|<--)/, "$1 $2");
+    l = l.replace(/^([\w\d_-]+)\s+\1\s*(<-->|-->|---|-.->|==>|<--)/, '$1 $2');
 
     // 3. Fix invalid colon edge label syntax:
     // e.g. "p0 <--> D1 : "Patient Data, ECG"" -> "p0 <-->|"Patient Data, ECG"| D1"
     // e.g. "Admin --> p0 : Manage Users" -> "Admin -->|"Manage Users"| p0"
-    const colonEdgeRegex = /^([\w\d_-]+)\s*(<-->|-->|---|-.->|==>|<--)\s*([\w\d_-]+)\s*:\s*["']?([^"'\n\r]+)["']?$/;
+    const colonEdgeRegex =
+      /^([\w\d_-]+)\s*(<-->|-->|---|-.->|==>|<--)\s*([\w\d_-]+)\s*:\s*["']?([^"'\n\r]+)["']?$/;
     const m = l.match(colonEdgeRegex);
     if (m) {
       const [, from, arrow, to, label] = m;
@@ -125,34 +123,41 @@ export function sanitizeMermaid(code) {
     fixedLines.push(indent + l);
   }
 
-  return fixedLines.join("\n");
+  return fixedLines.join('\n');
 }
 
-async function callWithRetry(fn, maxRetries = 3, delayMs = 1500) {
+async function callWithRetry(fn, operation, maxRetries = 3, delayMs = 1500) {
   let lastErr;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      return await fn();
+      const result = await fn();
+      recordGeminiSuccess(result, operation);
+      return result;
     } catch (err) {
       lastErr = err;
+      recordGeminiFailure(err);
       const isRateLimit =
-        err.message?.includes("429") ||
-        err.message?.includes("RESOURCE_EXHAUSTED") ||
+        err.message?.includes('429') ||
+        err.message?.includes('RESOURCE_EXHAUSTED') ||
         err.status === 429;
       const isUnavailable =
-        err.message?.includes("503") ||
-        err.message?.includes("high demand") ||
-        err.message?.includes("UNAVAILABLE") ||
+        err.message?.includes('503') ||
+        err.message?.includes('high demand') ||
+        err.message?.includes('UNAVAILABLE') ||
         err.status === 503;
 
       if ((isRateLimit || isUnavailable) && attempt < maxRetries) {
         let wait = delayMs * attempt;
-        const delayMatch = err.message?.match(/retry in ([\d\.]+)s/i) || err.message?.match(/"retryDelay":\s*"(\d+)s"/i);
+        const delayMatch =
+          err.message?.match(/retry in ([\d\.]+)s/i) ||
+          err.message?.match(/"retryDelay":\s*"(\d+)s"/i);
         if (delayMatch) {
           const secs = Math.min(10, Math.ceil(parseFloat(delayMatch[1])));
           wait = secs * 1000;
         }
-        console.warn(`Gemini rate limit / busy (attempt ${attempt}/${maxRetries}), waiting ${Math.round(wait / 1000)}s...`);
+        console.warn(
+          `Gemini rate limit / busy (attempt ${attempt}/${maxRetries}), waiting ${Math.round(wait / 1000)}s...`
+        );
         await new Promise((res) => setTimeout(res, wait));
         continue;
       }
@@ -165,7 +170,7 @@ async function callWithRetry(fn, maxRetries = 3, delayMs = 1500) {
 export async function generateProjectDiagrams(rawText) {
   // Check cache first
   const cacheKey = `diagrams_${rawText}`;
-  const cached = getCachedResult("diagrams", cacheKey);
+  const cached = await getCachedResult('diagrams', cacheKey);
   if (cached) {
     return cached;
   }
@@ -225,16 +230,18 @@ Return a JSON object with this exact structure:
   }
 }`;
 
-  const response = await callWithRetry(() =>
-    ai.models.generateContent({
-      model: MODEL,
-      contents: prompt,
-      config: {
-        systemInstruction: DIAGRAM_SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        temperature: 0.25,
-      },
-    })
+  const response = await callWithRetry(
+    () =>
+      ai.models.generateContent({
+        model: MODEL,
+        contents: prompt,
+        config: {
+          systemInstruction: DIAGRAM_SYSTEM_INSTRUCTION,
+          responseMimeType: 'application/json',
+          temperature: 0.25,
+        },
+      }),
+    'diagram_generation'
   );
 
   const parsed = safeJsonParse(response.text);
@@ -246,7 +253,7 @@ Return a JSON object with this exact structure:
         key,
         title: item.title || `Fig ${key}`,
         caption: item.caption || item.title || `Fig ${key}`,
-        description: item.description || "",
+        description: item.description || '',
         type: item.type || key,
         mermaid: sanitizeMermaid(item.mermaid),
       };
@@ -254,11 +261,15 @@ Return a JSON object with this exact structure:
   }
 
   // Cache successful result
-  setCachedResult("diagrams", cacheKey, results);
+  await setCachedResult('diagrams', cacheKey, results);
   return results;
 }
 
-export async function refineSingleDiagram(currentMermaid, instruction, rawText = "") {
+export async function refineSingleDiagram(
+  currentMermaid,
+  instruction,
+  rawText = ''
+) {
   const ai = getClient();
   const prompt = `CURRENT MERMAID DIAGRAM:
 """
@@ -270,7 +281,7 @@ USER REFINEMENT INSTRUCTION:
 ${instruction}
 """
 
-${rawText ? `OPTIONAL PROJECT CONTEXT:\n"""\n${rawText}\n"""` : ""}
+${rawText ? `OPTIONAL PROJECT CONTEXT:\n"""\n${rawText}\n"""` : ''}
 
 Update the Mermaid diagram strictly according to the instruction while maintaining strict, valid Mermaid syntax. Return a JSON object with:
 {
@@ -280,30 +291,32 @@ Update the Mermaid diagram strictly according to the instruction while maintaini
   "description": "Updated academic description paragraph"
 }`;
 
-  const response = await callWithRetry(() =>
-    ai.models.generateContent({
-      model: MODEL,
-      contents: prompt,
-      config: {
-        systemInstruction: DIAGRAM_SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        temperature: 0.3,
-      },
-    })
+  const response = await callWithRetry(
+    () =>
+      ai.models.generateContent({
+        model: MODEL,
+        contents: prompt,
+        config: {
+          systemInstruction: DIAGRAM_SYSTEM_INSTRUCTION,
+          responseMimeType: 'application/json',
+          temperature: 0.3,
+        },
+      }),
+    'diagram_refinement'
   );
 
   const parsed = safeJsonParse(response.text);
 
   return {
     mermaid: sanitizeMermaid(parsed.mermaid || currentMermaid),
-    title: parsed.title || "Refined Diagram",
-    caption: parsed.caption || "Fig: Refined Diagram",
-    description: parsed.description || "",
+    title: parsed.title || 'Refined Diagram',
+    caption: parsed.caption || 'Fig: Refined Diagram',
+    description: parsed.description || '',
   };
 }
 
 // Convert Mermaid diagram into a publication-ready PNG Buffer for Word/PDF embedding
-export async function renderMermaidToPng(mermaidCode, title = "Diagram") {
+export async function renderMermaidToPng(mermaidCode, title = 'Diagram') {
   const cleanCode = sanitizeMermaid(mermaidCode);
 
   // Strategy 1: mermaid.ink PNG endpoint (with high print quality)
@@ -311,21 +324,21 @@ export async function renderMermaidToPng(mermaidCode, title = "Diagram") {
     const jsonStr = JSON.stringify({
       code: cleanCode,
       mermaid: {
-        theme: "default",
+        theme: 'default',
         themeVariables: {
-          fontSize: "14px",
-          fontFamily: "Arial, Helvetica, sans-serif",
-          primaryColor: "#f8fafc",
-          primaryBorderColor: "#0f172a",
-          primaryTextColor: "#000000",
-          lineColor: "#0f172a",
-          secondaryColor: "#ffffff",
-          tertiaryColor: "#f1f5f9",
-          edgeLabelBackground: "#ffffff",
+          fontSize: '14px',
+          fontFamily: 'Arial, Helvetica, sans-serif',
+          primaryColor: '#f8fafc',
+          primaryBorderColor: '#0f172a',
+          primaryTextColor: '#000000',
+          lineColor: '#0f172a',
+          secondaryColor: '#ffffff',
+          tertiaryColor: '#f1f5f9',
+          edgeLabelBackground: '#ffffff',
         },
       },
     });
-    const b64 = Buffer.from(jsonStr).toString("base64");
+    const b64 = Buffer.from(jsonStr).toString('base64');
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
 
@@ -342,7 +355,7 @@ export async function renderMermaidToPng(mermaidCode, title = "Diagram") {
       }
     }
   } catch (err) {
-    console.warn("Mermaid.ink PNG attempt:", err.message);
+    console.warn('Mermaid.ink PNG attempt:', err.message);
   }
 
   // Strategy 2: mermaid.ink SVG endpoint rasterized locally via @resvg/resvg-js
@@ -350,14 +363,14 @@ export async function renderMermaidToPng(mermaidCode, title = "Diagram") {
     const jsonStr = JSON.stringify({
       code: cleanCode,
       mermaid: {
-        theme: "default",
+        theme: 'default',
         themeVariables: {
-          fontSize: "14px",
-          fontFamily: "Arial, Helvetica, sans-serif",
+          fontSize: '14px',
+          fontFamily: 'Arial, Helvetica, sans-serif',
         },
       },
     });
-    const b64 = Buffer.from(jsonStr).toString("base64");
+    const b64 = Buffer.from(jsonStr).toString('base64');
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
 
@@ -368,17 +381,17 @@ export async function renderMermaidToPng(mermaidCode, title = "Diagram") {
 
     if (res.ok) {
       const svgText = await res.text();
-      if (svgText.includes("<svg")) {
+      if (svgText.includes('<svg')) {
         const resvg = new Resvg(svgText, {
-          fitTo: { mode: "width", value: 950 },
-          background: "#ffffff",
+          fitTo: { mode: 'width', value: 950 },
+          background: '#ffffff',
         });
         const pngData = resvg.render();
         return pngData.asPng();
       }
     }
   } catch (err) {
-    console.warn("Mermaid.ink SVG attempt:", err.message);
+    console.warn('Mermaid.ink SVG attempt:', err.message);
   }
 
   // Strategy 3: Kroki API rendering
@@ -386,9 +399,9 @@ export async function renderMermaidToPng(mermaidCode, title = "Diagram") {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
 
-    const res = await fetch("https://kroki.io/mermaid/png", {
-      method: "POST",
-      headers: { "Content-Type": "text/plain" },
+    const res = await fetch('https://kroki.io/mermaid/png', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
       body: cleanCode,
       signal: controller.signal,
     });
@@ -402,20 +415,20 @@ export async function renderMermaidToPng(mermaidCode, title = "Diagram") {
       }
     }
   } catch (err) {
-    console.warn("Kroki attempt:", err.message);
+    console.warn('Kroki attempt:', err.message);
   }
 
   // Strategy 4: Fallback vector flowchart SVG rasterized locally
   const svg = generateVectorSvgFromMermaid(cleanCode, title);
   try {
     const resvg = new Resvg(svg, {
-      fitTo: { mode: "width", value: 900 },
-      background: "#ffffff",
+      fitTo: { mode: 'width', value: 900 },
+      background: '#ffffff',
     });
     const pngData = resvg.render();
     return pngData.asPng();
   } catch (err) {
-    console.warn("Resvg fallback error:", err.message);
+    console.warn('Resvg fallback error:', err.message);
     return createFallbackPng(title);
   }
 }
@@ -423,9 +436,16 @@ export async function renderMermaidToPng(mermaidCode, title = "Diagram") {
 // Local vector SVG generator
 function generateVectorSvgFromMermaid(mermaidCode, title) {
   const lines = mermaidCode
-    .split("\n")
+    .split('\n')
     .map((l) => l.trim())
-    .filter((l) => l && !l.startsWith("%%") && !l.startsWith("graph") && !l.startsWith("flowchart") && !l.startsWith("erDiagram"));
+    .filter(
+      (l) =>
+        l &&
+        !l.startsWith('%%') &&
+        !l.startsWith('graph') &&
+        !l.startsWith('flowchart') &&
+        !l.startsWith('erDiagram')
+    );
 
   const nodes = [];
   const links = [];
@@ -445,8 +465,19 @@ function generateVectorSvgFromMermaid(mermaidCode, title) {
   }
 
   if (nodes.length === 0) {
-    nodes.push("User Entities", "Input Interface", "Core Processing Engine", "Database Storage", "Output Reports");
-    links.push({ from: nodes[0], to: nodes[1] }, { from: nodes[1], to: nodes[2] }, { from: nodes[2], to: nodes[3] }, { from: nodes[3], to: nodes[4] });
+    nodes.push(
+      'User Entities',
+      'Input Interface',
+      'Core Processing Engine',
+      'Database Storage',
+      'Output Reports'
+    );
+    links.push(
+      { from: nodes[0], to: nodes[1] },
+      { from: nodes[1], to: nodes[2] },
+      { from: nodes[2], to: nodes[3] },
+      { from: nodes[3], to: nodes[4] }
+    );
   }
 
   const boxWidth = 210;
@@ -458,7 +489,7 @@ function generateVectorSvgFromMermaid(mermaidCode, title) {
   const svgWidth = cols * (boxWidth + marginX) + marginX;
   const svgHeight = rows * (boxHeight + marginY) + 95;
 
-  let elements = "";
+  let elements = '';
   elements += `<rect width="${svgWidth}" height="${svgHeight}" fill="#ffffff" stroke="#0f172a" stroke-width="2" rx="6"/>`;
   elements += `<text x="${svgWidth / 2}" y="35" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="bold" fill="#000000" text-anchor="middle">${escapeXml(title)}</text>`;
 
@@ -470,9 +501,9 @@ function generateVectorSvgFromMermaid(mermaidCode, title) {
 
     const isStartEnd = idx === 0 || idx === nodes.length - 1;
     const rx = isStartEnd ? 20 : 6;
-    const bgFill = isStartEnd ? "#f0f4f8" : "#ffffff";
-    const borderCol = "#000000";
-    const textCol = "#000000";
+    const bgFill = isStartEnd ? '#f0f4f8' : '#ffffff';
+    const borderCol = '#000000';
+    const textCol = '#000000';
 
     elements += `
       <g>
@@ -493,29 +524,35 @@ function generateVectorSvgFromMermaid(mermaidCode, title) {
 }
 
 function cleanLabel(raw) {
-  if (!raw) return "";
+  if (!raw) return '';
   let s = raw.trim();
   const match = s.match(/\["?(.*?)"?\]|\("?(.*?)"?\)|\{"?(.*?)"?\}|\|(.*?)\|/);
   if (match) {
     s = match[1] || match[2] || match[3] || match[4] || s;
   }
-  return s.replace(/[\[\]\(\)\{\}"]/g, "").trim();
+  return s.replace(/[\[\]\(\)\{\}"]/g, '').trim();
 }
 
 function truncate(str, max) {
-  return str.length > max ? str.slice(0, max - 1) + "…" : str;
+  return str.length > max ? str.slice(0, max - 1) + '…' : str;
 }
 
 function escapeXml(unsafe) {
-  if (!unsafe) return "";
+  if (!unsafe) return '';
   return String(unsafe).replace(/[<>&'"]/g, (c) => {
     switch (c) {
-      case "<": return "&lt;";
-      case ">": return "&gt;";
-      case "&": return "&amp;";
-      case "'": return "&apos;";
-      case '"': return "&quot;";
-      default: return c;
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '&':
+        return '&amp;';
+      case "'":
+        return '&apos;';
+      case '"':
+        return '&quot;';
+      default:
+        return c;
     }
   });
 }
@@ -525,6 +562,6 @@ function createFallbackPng(title) {
     <rect width="100%" height="100%" fill="#ffffff" stroke="#000000" stroke-width="2"/>
     <text x="300" y="105" font-family="Arial" font-size="16" fill="#000000" text-anchor="middle" font-weight="bold">${escapeXml(title)}</text>
   </svg>`;
-  const resvg = new Resvg(svg, { fitTo: { mode: "width", value: 600 } });
+  const resvg = new Resvg(svg, { fitTo: { mode: 'width', value: 600 } });
   return resvg.render().asPng();
 }

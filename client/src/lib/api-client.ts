@@ -4,6 +4,7 @@
  * Handles CSRF double-submit token fetching and header inclusion automatically.
  */
 
+const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL || "").replace(/\/$/, "");
 let cachedCsrfToken: string | null = null;
 
 /**
@@ -13,7 +14,7 @@ export async function getCsrfToken(): Promise<string> {
   if (cachedCsrfToken) return cachedCsrfToken;
 
   try {
-    const res = await fetch("/api/v1/auth/csrf-token", {
+    const res = await fetch(`${API_BASE_URL}/api/v1/auth/csrf-token`, {
       method: "GET",
       credentials: "include",
     });
@@ -48,7 +49,8 @@ export async function apiRequest<T = any>(
 ): Promise<T> {
   const { params, skipCsrf = false, headers: customHeaders, body, method = "GET", ...rest } = options;
 
-  let url = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  const cleanEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+  let url = API_BASE_URL ? `${API_BASE_URL}${cleanEndpoint}` : cleanEndpoint;
 
   // Build query string if params exist
   if (params) {
@@ -248,7 +250,7 @@ export const api = {
       apiRequest(`/api/v1/assets/${assetId}`, {
         method: "DELETE",
       }),
-    downloadUrl: (assetId: string) => `/api/v1/assets/${assetId}/download`,
+    downloadUrl: (assetId: string) => `${API_BASE_URL}/api/v1/assets/${assetId}/download`,
   },
 
   // Payment

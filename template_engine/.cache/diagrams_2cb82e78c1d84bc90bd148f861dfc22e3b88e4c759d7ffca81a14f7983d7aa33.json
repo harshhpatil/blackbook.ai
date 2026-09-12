@@ -1,0 +1,50 @@
+{
+  "fig_5_1_dfd0": {
+    "key": "fig_5_1_dfd0",
+    "title": "Fig 5.1 DFD Level 0",
+    "caption": "Fig 5.1 DFD Level 0 (Context Diagram)",
+    "description": "The DFD Level 0 diagram, also known as the context diagram, represents the overall functioning of the AgroDrone system as a single central process. It shows how primary external entities such as the Farmer/Operator, Agronomist/Admin, and Drone Hardware interact with the system boundary and the database.",
+    "type": "dfd0",
+    "mermaid": "flowchart TD\n    Farmer[\"👨‍🌾 Farmer / Operator\"] -->|\"Flight Plan & Grid Parameters\"| P0([\"0.0 AgroDrone Core System\"])\n    P0 -->|\"Real-time Telemetry & Crop Health Alerts\"| Farmer\n    Admin[\"👤 Agronomist / Admin\"] -->|\"Disease Detection Models & Config\"| P0\n    P0 -->|\"Field Analytics & Chemical Savings Reports\"| Admin\n    DroneHW[\"🚁 AgroDrone Hardware Sensors/Actuators\"] -->|\"RGB/NIR Frames & GPS Coordinates\"| P0\n    P0 -->|\"ESP32 Pump Relay Spray Commands\"| DroneHW\n    P0 <-->|\"Flight Logs & Telemetry Data\"| DB[(\"Central AgroDB Data Store\")]"
+  },
+  "fig_5_2_dfd1": {
+    "key": "fig_5_2_dfd1",
+    "title": "Fig 5.2 DFD Level 1",
+    "caption": "Fig 5.2 DFD Level 1",
+    "description": "The DFD Level 1 diagram expands the AgroDrone system into four core functional processes. It illustrates how data flows between external entities, primary processing modules (Navigation, Analytics, Spraying, and Reporting), and persistent data stores D1, D2, and D3.",
+    "type": "dfd1",
+    "mermaid": "flowchart TD\n    Farmer[\"👨‍🌾 Farmer / Operator\"] -->|\"Mission Waypoints\"| P1([\"1.0 Navigation & Flight Telemetry Module\"])\n    P1 -->|\"Pixhawk Waypoint Navigation\"| DroneHW[\"🚁 Drone Hardware\"]\n    DroneHW -->|\"RGB & NIR Video Stream + GPS\"| P2([\"2.0 Multi-Spectral Edge Processing\"])\n    P1 <-->|\"Read / Store Flight Path Logs\"| D1[(\"D1 Flight Waypoints & GPS Logs\")]\n    D2[(\"D2 YOLO Models & NDVI Thresholds\")] -->|\"Model Weights & Criteria\"| P2\n    P2 -->|\"Infected Spot Coordinates & Stress Index\"| P3([\"3.0 Precision Spot Spray Control\"])\n    P2 -->|\"Write Crop Health Data\"| D3[(\"D3 Crop Health & Spray Logs\")]\n    P3 -->|\"ESP32 PWM Trigger Signal\"| DroneHW\n    P3 -->|\"Log Spray Volume & Duration\"| D3\n    D3 -->|\"Read Field Analytics Data\"| P4([\"4.0 Field Health Analytics & Report Generation\"])\n    P4 -->|\"NDVI Heatmaps & Chemical Savings Summary\"| Agronomist[\"👤 Agronomist / Admin\"]\n    P4 -->|\"Field Dashboard Alerts\"| Farmer"
+  },
+  "fig_5_3_dfd2": {
+    "key": "fig_5_3_dfd2",
+    "title": "Fig 5.3 DFD Level 2",
+    "caption": "Fig 5.3 DFD Level 2",
+    "description": "The DFD Level 2 diagram provides a detailed decomposition of the sub-processes within image analytics and spray execution. It demonstrates frame preprocessing, NDVI computation, YOLOv8 disease classification, target localization, and ESP32 relay actuation.",
+    "type": "dfd2",
+    "mermaid": "flowchart TD\n    DroneHW[\"🚁 Drone Camera & GPS\"] -->|\"Raw Multispectral Imagery Stream\"| P2_1([\"2.1 Frame Alignment & RGB/NIR Separation\"])\n    P2_1 -->|\"NIR + RED Aligned Channel Data\"| P2_2([\"2.2 NDVI Index Computation Engine\"])\n    P2_1 -->|\"Aligned Leaf RGB Frames\"| P2_3([\"2.3 YOLOv8-Nano Disease Classifier\"])\n    D2[(\"D2 YOLO Model & NDVI Thresholds\")] -->|\"NDVI Threshold (NDVI < 0.3)\"| P2_2\n    D2 -->|\"Blight / Rust Detection Weights\"| P2_3\n    P2_2 -->|\"Water Stress Flag + Spatial Target\"| P3_1([\"3.1 Target Spatial Localization Engine\"])\n    P2_3 -->|\"Leaf Disease Bounding Box + GPS Spot\"| P3_1\n    P3_1 -->|\"Validated Spot Target Coordinates\"| P3_2([\"3.2 ESP32 Relay Micro-Spray Controller\"])\n    P3_2 -->|\"1.5s PWM Spray Pulse\"| Pump[\"💧 12V Diaphragm Spray Pump\"]\n    P3_2 -->|\"Log Spray Spot, Timestamp & Volume\"| D3[(\"D3 Crop Health & Spray Logs\")]"
+  },
+  "fig_5_4_block_diagram": {
+    "key": "fig_5_4_block_diagram",
+    "title": "Fig 5.4 Block Diagram",
+    "caption": "Fig 5.4 Block Diagram (Complete System Block Architecture)",
+    "description": "The block diagram details the complete multi-tier architecture of the AgroDrone solution, spanning user inputs, hardware sensors, edge processing components on the Raspberry Pi 4, spatial decision execution, database stores, and user analytics outputs.",
+    "type": "block_diagram",
+    "mermaid": "graph TB\n    subgraph USERS[\"👤 USER INTERFACE TIER\"]\n        Farmer[\"👨‍🌾 Farmer / Drone Operator\"]\n        Agronomist[\"👤 Field Agronomist / Admin\"]\n    end\n\n    subgraph INPUT[\"📡 HARDWARE SENSOR & TELEMETRY STREAM\"]\n        Cam[\"Multi-Spectral Camera (RGB + NIR)\"]\n        GPS[\"Pixhawk 4 GPS & Telemetry Module\"]\n        Mission[\"Mission Planner Flight Waypoint File\"]\n    end\n\n    subgraph PROCESSING[\"⚙️ RASPBERRY PI 4 EDGE PROCESSING PIPELINE\"]\n        Step1[\"1. Frame Channel Dewarping & Alignment\"]\n        Step2[\"2. NDVI Computation Engine (NIR-RED)/(NIR+RED)\"]\n        Step3[\"3. Edge-optimized YOLOv8-Nano Leaf Blight Detector\"]\n        Step4[\"4. Spatial Target Matching & Coordinate Mapper\"]\n        Step5[\"5. ESP32 Spray Relay Command Controller\"]\n    end\n\n    subgraph STORAGE[\"💾 DATA STORAGE & PERSISTENCE LAYER\"]\n        DB1[(\"D1 Flight Path & GPS Logs\")]\n        DB2[(\"D2 Disease Models & NDVI Rules\")]\n        DB3[(\"D3 Field Health Analytics & Spray Logs\")]\n    end\n\n    subgraph OUTPUT[\"🚀 ACTUATOR & OUTPUT DASHBOARD TIER\"]\n        Pump[\"💧 12V Diaphragm Pump & PWM Misting Nozzles\"]\n        Dashboard[\"🌐 Flask Telemetry Dashboard & NDVI Heatmap\"]\n        Report[\"📊 CSV Chemical Savings & Crop Health Summary\"]\n    end\n\n    Mission --> Step1\n    Cam --> Step1\n    GPS --> Step4\n    Step1 --> Step2\n    Step1 --> Step3\n    DB2 --> Step2\n    DB2 --> Step3\n    Step2 --> Step4\n    Step3 --> Step4\n    Step4 --> Step5\n    Step5 --> Pump\n    Step1 --> DB1\n    Step4 --> DB3\n    DB3 --> Dashboard\n    DB3 --> Report\n    Farmer --> Mission\n    Dashboard --> Farmer\n    Report --> Agronomist"
+  },
+  "fig_5_5_activity_diagram": {
+    "key": "fig_5_5_activity_diagram",
+    "title": "Fig 5.5 Activity Diagram",
+    "caption": "Fig 5.5 Activity Diagram (System Workflow)",
+    "description": "The activity diagram illustrates the operational workflow of the AgroDrone system, detailing user authentication, role verification, autonomous drone waypoint execution, real-time edge processing, targeted spray decision logic, and post-flight report generation.",
+    "type": "activity_diagram",
+    "mermaid": "flowchart TD\n    Start([\"Start System Operation\"])\n    Login[\"Authenticate Operator Credentials\"]\n    CheckAuth{\"Valid Login?\"}\n    RoleCheck{\"Check User Role\"}\n\n    AdminPath[\"Manage YOLO Models & NDVI Rule Parameters\"]\n    ViewReports[\"View Multi-Field Comparative Reports\"]\n\n    UploadGrid[\"Upload Grid Waypoints (5m Flight Altitude)\"]\n    LaunchDrone[\"Launch Autonomous Drone Flight Session\"]\n    CaptureData[\"Capture Multi-Spectral RGB/NIR Frames & GPS Telemetry\"]\n    RunAnalytics[\"Compute NDVI Index & YOLO Leaf Disease Classification\"]\n\n    CheckTarget{\"Target Spot: NDVI < 0.3 OR Disease Confirmed?\"}\n    TriggerRelay[\"Send 1.5s PWM Signal to ESP32 Spray Pump Relay\"]\n    LogSpray[\"Log Spray Spot Coordinates & Chemical Volume Saved\"]\n    BypassSpray[\"Continue Grid Route without Spraying\"]\n\n    CheckGrid{\"Mission Waypoints Completed?\"}\n    LandDrone[\"Return to Launch (RTL) & Autonomous Landing\"]\n    GenReport[\"Generate Field Health Heatmap & Spray Analytics Summary\"]\n    End([\"End Session\"])\n\n    Start --> Login\n    Login --> CheckAuth\n    CheckAuth -->|\"No\"| Login\n    CheckAuth -->|\"Yes\"| RoleCheck\n    RoleCheck -->|\"Admin / Agronomist\"| AdminPath\n    AdminPath --> ViewReports\n    ViewReports --> End\n    RoleCheck -->|\"Operator / Farmer\"| UploadGrid\n    UploadGrid --> LaunchDrone\n    LaunchDrone --> CaptureData\n    CaptureData --> RunAnalytics\n    RunAnalytics --> CheckTarget\n    CheckTarget -->|\"Yes\"| TriggerRelay\n    TriggerRelay --> LogSpray\n    LogSpray --> CheckGrid\n    CheckTarget -->|\"No\"| BypassSpray\n    BypassSpray --> CheckGrid\n    CheckGrid -->|\"No\"| CaptureData\n    CheckGrid -->|\"Yes\"| LandDrone\n    LandDrone --> GenReport\n    GenReport --> End"
+  },
+  "fig_5_6_use_case": {
+    "key": "fig_5_6_use_case",
+    "title": "Fig 5.6 Use Case Diagram",
+    "caption": "Fig 5.6 Use Case Diagram",
+    "description": "The use case diagram illustrates the functional system boundary for AgroDrone, outlining key operational capabilities and mapping interactions between distinct user actors, hardware components, and core system functionalities.",
+    "type": "use_case",
+    "mermaid": "flowchart LR\n    Farmer[\"👨‍🌾 Farmer / Operator\"]\n    Agronomist[\"👤 Field Agronomist / Admin\"]\n    DroneHW[\"🚁 AgroDrone Pixhawk & Sensors\"]\n    Actuator[\"💧 ESP32 Spray Pump Actuator\"]\n\n    subgraph AgroDrone_Boundary [\"AgroDrone System Boundary\"]\n        UC1([\"UC1: Configure & Upload Waypoint Mission Grid\"])\n        UC2([\"UC2: Execute Autonomous Flight Session\"])\n        UC3([\"UC3: Process Multispectral RGB/NIR Stream\"])\n        UC4([\"UC4: Compute NDVI Index & Detect Diseases\"])\n        UC5([\"UC5: Trigger Precision Spot Micro-Spraying\"])\n        UC6([\"UC6: View Real-Time Field Telemetry & Heatmap\"])\n        UC7([\"UC7: Update YOLO Disease Weights & Thresholds\"])\n        UC8([\"UC8: Export Chemical Savings & Crop Health Summary\"])\n    end\n\n    Farmer --> UC1\n    Farmer --> UC2\n    Farmer --> UC6\n    DroneHW --> UC2\n    DroneHW --> UC3\n    UC2 -.->|\"<<include>>\"| UC3\n    UC3 -.->|\"<<include>>\"| UC4\n    UC4 -.->|\"<<conditional>>\"| UC5\n    UC5 --> Actuator\n    Agronomist --> UC6\n    Agronomist --> UC7\n    Agronomist --> UC8"
+  }
+}

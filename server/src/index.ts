@@ -26,9 +26,14 @@ const startServer = async () => {
   }
 
   server = app.listen(env.PORT, () => {
-    console.log(env.PORT)
+    console.log(env.PORT);
     log.info({ port: env.PORT, nodeEnv: env.NODE_ENV }, 'server started');
   });
+
+  // Keep HTTP server connections alive during multi-stage AI generation (up to 3 minutes)
+  server.headersTimeout = 180_000;
+  server.requestTimeout = 180_000;
+  server.keepAliveTimeout = 65_000;
 };
 
 // function to shutdown the server

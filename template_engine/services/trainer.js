@@ -9,19 +9,12 @@ import fs from "fs";
 import PizZip from "pizzip";
 import { GoogleGenAI } from "@google/genai";
 import { safeJsonParse } from "./safeJson.js";
+import { recordGeminiFailure, recordGeminiSuccess } from "./geminiStatus.js";
 
 
 
 
-
-let _ai = null;
-function getClient() {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY is missing. Add it to server/.env and restart.");
-  }
-  if (!_ai) _ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
-  return _ai;
-}
+import { getClient } from "./gemini.js";
 
 const MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
@@ -54,14 +47,21 @@ Return valid JSON only, no markdown fences, no commentary, in this exact shape:
 // Step 1: ask Gemini to find which spans of text map to which fields,
 // letting it determine the fields themselves from the document's structure.
 export async function suggestFieldMappings(rawText) {
-  const response = await getClient().models.generateContent({
-    model: MODEL,
-    contents: `${TRAINER_PROMPT}\n\nDOCUMENT TEXT:\n${rawText}`,
-    config: {
-      responseMimeType: "application/json",
-      temperature: 0.2,
-    },
-  });
+  let response;
+  try {
+    response = await getClient().models.generateContent({
+      model: MODEL,
+      contents: `${TRAINER_PROMPT}\n\nDOCUMENT TEXT:\n${rawText}`,
+      config: {
+        responseMimeType: "application/json",
+        temperature: 0.2,
+      },
+    });
+    recordGeminiSuccess(response, "template_training");
+  } catch (error) {
+    recordGeminiFailure(error);
+    throw error;
+  }
 
   const suggestions = safeJsonParse(response.text);
 
@@ -83,8 +83,10 @@ export async function suggestFieldMappings(rawText) {
 // (<w:t>...</w:t>), which covers the vast majority of black book exports.
 // Values split across multiple runs (e.g. due to inline spellcheck markup)
 // won't be caught — those need a manual placeholder swap in Word.
-export function applyTemplateMapping(filledDocxPath, approvedMapping, outputFilename) {
-  const content = fs.readFileSync(filledDocxPath, "binary");
+export function applyTemplateMapping(filledDocxInput, approvedMapping) {
+  const content = Buffer.isBuffer(filledDocxInput)
+    ? filledDocxInput
+    : fs.readFileSync(filledDocxInput, "binary");
   const zip = new PizZip(content);
 
   const docXmlPath = "word/document.xml";
@@ -113,8 +115,7 @@ export function applyTemplateMapping(filledDocxPath, approvedMapping, outputFile
   zip.file(docXmlPath, xml);
   const buf = zip.generate({ type: "nodebuffer" });
 
-  fs.writeFileSync(outputFilename, buf);
-  return { outputPath: outputFilename, applied, skipped };
+  return { buffer: buf, applied, skipped };
 }
 
 function escapeXml(str) {

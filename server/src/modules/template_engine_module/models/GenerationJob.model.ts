@@ -18,8 +18,8 @@ export interface IGenerationJob extends Document {
   status: 'queued' | 'processing' | 'completed' | 'failed';
   /** The resulting compiled files generated upon successful completion */
   result?: {
-    docxAsset: mongoose.Types.ObjectId;
-    pdfAsset?: mongoose.Types.ObjectId;
+    docxUrl: string;
+    pdfUrl?: string;
   };
   /** Error message if the generation job failed */
   error?: string;
@@ -56,8 +56,8 @@ const GenerationJobSchema = new Schema<IGenerationJob>(
       index: true,
     },
     result: {
-      docxAsset: { type: Schema.Types.ObjectId, ref: 'Asset' },
-      pdfAsset: { type: Schema.Types.ObjectId, ref: 'Asset' },
+      docxUrl: { type: String },
+      pdfUrl: { type: String },
     },
     error: { type: String, maxlength: 1000 },
   },

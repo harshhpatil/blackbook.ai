@@ -38,6 +38,11 @@ const securityConfig = z.object({
 const databaseConfig = z.object({
   MONGO_URI: z.string().url().or(z.string().startsWith('mongodb')),
   REDIS_URL: z.string().url().or(z.string().startsWith('redis')),
+  REDIS_CONNECT_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(15_000),
+  REDIS_COMMAND_TIMEOUT_MS: z.coerce.number().int().min(1_000).max(120_000).default(20_000),
+  REDIS_RATE_LIMIT_COMMAND_TIMEOUT_MS: z.coerce.number().int().min(500).max(30_000).default(3_000),
+  REDIS_KEEP_ALIVE_MS: z.coerce.number().int().min(1_000).max(120_000).default(30_000),
+  REDIS_RETRY_MAX_DELAY_MS: z.coerce.number().int().min(250).max(60_000).default(5_000),
 });
 
 /**
@@ -128,7 +133,11 @@ const aiConfig = z.object({
 });
 
 const docMorphConfig = z.object({
-  DOCMORPH_SERVICE_URL: z.string().url().default('http://localhost:5002'),
+  TEMPLATE_ENGINE_URL: z.string().url().default('http://localhost:5002'),
+  TEMPLATE_ENGINE_TIMEOUT_MS: z.coerce.number().int().min(500).max(120_000).default(90_000),
+  TEMPLATE_ENGINE_MAX_RETRIES: z.coerce.number().int().min(0).max(5).default(2),
+  TEMPLATE_ENGINE_FAILURE_THRESHOLD: z.coerce.number().int().min(1).max(20).default(3),
+  TEMPLATE_ENGINE_COOLDOWN_MS: z.coerce.number().int().min(1_000).max(300_000).default(15_000),
 });
 
 /**

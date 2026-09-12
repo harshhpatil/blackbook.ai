@@ -5,81 +5,103 @@ import { createLogger } from '../lib/logger.ts';
 const log = createLogger('redis');
 
 let redisConnection: Redis | undefined;
+let rateLimitRedisConnection: Redis | undefined;
 let bullRedisConnection: Redis | undefined;
 
-/**
- * Common configuration options for Redis instances.
- * Supports secure rediss:// (TLS) connection strings for Cloud Redis.
- */
-const baseOptions: RedisOptions = {
-  connectTimeout: 5000,
-  commandTimeout: 5000,
-  lazyConnect: true,
-  // Enables TLS automatically when connecting to Cloud Redis (rediss://)
-  tls: env.REDIS_URL.startsWith('rediss://') ? {} : undefined,
+const cloudRetryStrategy = (attempt: number): number => {
+  const maxDelay = env.REDIS_RETRY_MAX_DELAY_MS || 3000;
+  const exponentialDelay = Math.min(
+    250 * 2 ** Math.min(attempt - 1, 8),
+    maxDelay
+  );
+  return exponentialDelay + Math.floor(Math.random() * 250);
 };
 
-/**
- * Gets or creates primary redis instance for caching and session storage.
- */
+const redisUrl = new URL(env.REDIS_URL);
+const isTls = redisUrl.protocol === 'rediss:';
+
+/** Shared safe transport settings for a managed Cloud Redis service. */
+const baseOptions: RedisOptions = {
+  connectTimeout: 20000,
+  keepAlive: 30000,
+  enableOfflineQueue: true, // Must be true so commands queue during handshakes
+  enableReadyCheck: true,
+  tls: isTls
+    ? {
+        rejectUnauthorized: false,
+        servername: redisUrl.hostname, // <--- Required for Cloud SNI routing
+      }
+    : undefined,  
+  retryStrategy: cloudRetryStrategy,
+  reconnectOnError(err: Error) {
+    return err.message.includes('READONLY');
+  },
+};
+
+const createClient = (name: string, options: RedisOptions): Redis => {
+  const client = new Redis(env.REDIS_URL, {
+    ...baseOptions,
+    // Do NOT set connectionName here — Cloud Redis (Upstash) rejects CLIENT SETNAME
+    ...options,
+  });
+
+  client.on('connect', () => log.info({ name }, 'redis connected'));
+  client.on('ready', () => log.info({ name }, 'redis ready'));
+  client.on('reconnecting', (delay: number) =>
+    log.warn({ name, delay }, 'redis reconnecting')
+  );
+  client.on('error', (err) =>
+    log.error({ err, name }, 'redis client connection error')
+  );
+
+  return client;
+};
+
+/** Primary redis instance for caching and session storage */
 export const getRedisConnection = (): Redis => {
   if (redisConnection) return redisConnection;
 
-  redisConnection = new Redis(env.REDIS_URL, {
-    ...baseOptions,
-    maxRetriesPerRequest: 3,
-  });
-
-  redisConnection.on('connect', () => {
-    log.info('redis connected');
-  });
-
-  redisConnection.on('error', (err) => {
-    log.error({ err }, 'redis client connection error');
+  redisConnection = createClient('application', {
+    commandTimeout: env.REDIS_COMMAND_TIMEOUT_MS || 5000,
+    maxRetriesPerRequest: 4,
   });
 
   return redisConnection;
 };
 
-/**
- * Gets or creates a dedicated Redis client instance for BullMQ queues.
- * BullMQ requires maxRetriesPerRequest to be null and enableReadyCheck to be false.
- */
+/** Dedicated client for express-rate-limit */
+export const getRateLimitRedisConnection = (): Redis => {
+  if (rateLimitRedisConnection) return rateLimitRedisConnection;
+
+  rateLimitRedisConnection = createClient('rate-limit', {
+    enableOfflineQueue: true, // Allow brief queuing during reconnect
+    commandTimeout: env.REDIS_RATE_LIMIT_COMMAND_TIMEOUT_MS || 3000,
+    maxRetriesPerRequest: 3, // Headroom for internet latency
+  });
+
+  return rateLimitRedisConnection;
+};
+
+/** Dedicated client for BullMQ */
 export const getBullRedisConnection = (): Redis => {
   if (bullRedisConnection) return bullRedisConnection;
 
-  bullRedisConnection = new Redis(env.REDIS_URL, {
-    ...baseOptions,
-    maxRetriesPerRequest: null,
+  bullRedisConnection = createClient('bullmq', {
+    maxRetriesPerRequest: null, // Required by BullMQ
     enableReadyCheck: false,
+    enableOfflineQueue: true,
+    commandTimeout: undefined, // Never timeout blocking queue reads
   });
 
-  bullRedisConnection.on('connect', () => {
-    log.info('bullmq redis client connected');
-  });
-
-  bullRedisConnection.on('error', (err) => {
-    log.error({ err }, 'bullmq redis client connection error');
-  });
-
-  // returning the bullmq redis connection instance
   return bullRedisConnection;
 };
 
-/**
- * Checks the operational health of the primary Redis connection.
- *
- * @returns {Promise<boolean>} True if the Redis server responds to a PING.
- */
 export const checkRedisConnection = async (): Promise<boolean> => {
   try {
     const client = getRedisConnection();
-
-    // explicitly connect if the lazy connect prvented initial connection
     if (client.status === 'wait') {
       await client.connect();
     }
-
     await client.ping();
     return true;
   } catch (err) {
@@ -88,20 +110,28 @@ export const checkRedisConnection = async (): Promise<boolean> => {
   }
 };
 
-/**
- * Gracefully closes all active Redis connection pools.
- * Should be invoked during server shutdown.
- */
-export const closeRedisConnection = async (): Promise<void> => {
-  if (redisConnection) {
-    await redisConnection.quit();
-    redisConnection = undefined;
-    log.info('primary redis connection closed');
+/** Safe shutdown helper that won't crash if disconnected */
+const safeClose = async (client: Redis | undefined, name: string) => {
+  if (!client) return;
+  try {
+    if (client.status === 'ready') {
+      await client.quit();
+    } else {
+      client.disconnect();
+    }
+    log.info(`${name} redis connection closed`);
+  } catch (err) {
+    client.disconnect();
   }
+};
 
-  if (bullRedisConnection) {
-    await bullRedisConnection.quit();
-    bullRedisConnection = undefined;
-    log.info('bullmq redis connection closed');
-  }
+export const closeRedisConnection = async (): Promise<void> => {
+  await Promise.allSettled([
+    safeClose(redisConnection, 'application'),
+    safeClose(rateLimitRedisConnection, 'rate-limit'),
+    safeClose(bullRedisConnection, 'bullmq'),
+  ]);
+  redisConnection = undefined;
+  rateLimitRedisConnection = undefined;
+  bullRedisConnection = undefined;
 };

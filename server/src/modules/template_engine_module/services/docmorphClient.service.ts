@@ -1,19 +1,26 @@
 import { env } from '../../../core/config/env.ts';
 
+export interface SourceAsset {
+  url: string;
+  filename: string;
+  contentType?: string;
+}
+
 export interface GenerateReportRequest {
-  templateFilename: string;
-  rawFilename?: string;
+  template: SourceAsset;
+  raw?: SourceAsset;
   rawText?: string;
   includeDiagrams?: boolean;
 }
 
 export interface TrainConfirmRequest {
-  filename: string;
+  source: SourceAsset;
   approvedMapping: Record<string, string>;
   templateName?: string;
 }
 
 export interface GenerateDiagramsRequest {
+  raw?: SourceAsset;
   rawFilename?: string;
   rawText?: string;
 }
@@ -24,34 +31,67 @@ export interface RefineDiagramRequest {
   rawText?: string;
 }
 
-export type DocMorphResponse = Record<string, any>;
-
-const RELATIVE_PATH_PATTERN = /^(\/(?:outputs|templates|uploads)\/[^\s"']*)$/;
-
-/** Prefixes DocMorph asset paths so API consumers can use them directly. */
-export function normalizeDocMorphUrls<T>(value: T): T {
-  if (typeof value === 'string' && RELATIVE_PATH_PATTERN.test(value)) {
-    return new URL(value, env.DOCMORPH_SERVICE_URL).toString() as T;
-  }
-
-  if (Array.isArray(value)) {
-    return value.map((item) => normalizeDocMorphUrls(item)) as T;
-  }
-
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value).map(([key, item]) => [key, normalizeDocMorphUrls(item)])
-    ) as T;
-  }
-
-  return value;
+export interface DocMorphError extends Error { status?: number; data?: unknown; }
+export interface TemplateResponse { success?: boolean; message?: string; filename?: string; fields?: string[]; objectKey?: string; }
+export interface GenerationResponse {
+  success?: boolean;
+  message?: string;
+  docxUrl?: string;
+  pdfUrl?: string | null;
+  docxKey?: string;
+  pdfKey?: string | null;
+  docxSize?: number;
+  pdfSize?: number | null;
+  data?: Record<string, unknown>;
+  diagrams?: Record<string, unknown>;
+  detectedFields?: string[];
 }
+export interface TrainingResponse { success?: boolean; message?: string; templateUrl?: string; templateKey?: string; appliedFields?: string[]; skippedFields?: string[]; suggestions?: Record<string, unknown>; }
 
 class DocMorphClient {
-  private readonly baseUrl = env.DOCMORPH_SERVICE_URL.replace(/\/$/, '');
+  private readonly baseUrl = env.TEMPLATE_ENGINE_URL.replace(/\/$/, '');
+  private consecutiveFailures = 0;
+  private openedAt = 0;
+
+  private async fetchWithResilience(url: string, init: RequestInit = {}): Promise<Response> {
+    if (this.consecutiveFailures >= env.TEMPLATE_ENGINE_FAILURE_THRESHOLD) {
+      if (Date.now() - this.openedAt < env.TEMPLATE_ENGINE_COOLDOWN_MS) {
+        throw Object.assign(new Error('Template engine is temporarily unavailable'), { status: 503 });
+      }
+      this.consecutiveFailures = 0;
+    }
+
+    let lastError: unknown;
+    for (let attempt = 0; attempt <= env.TEMPLATE_ENGINE_MAX_RETRIES; attempt += 1) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), env.TEMPLATE_ENGINE_TIMEOUT_MS);
+      try {
+        const response = await fetch(url, { ...init, signal: controller.signal });
+        if (response.ok || (response.status >= 400 && response.status < 500)) {
+          this.consecutiveFailures = 0;
+          return response;
+        }
+        lastError = new Error(`Template engine returned ${response.status}`);
+      } catch (error) {
+        lastError = error;
+      } finally {
+        clearTimeout(timer);
+      }
+      if (attempt < env.TEMPLATE_ENGINE_MAX_RETRIES) {
+        await new Promise((resolve) => setTimeout(resolve, 250 * 2 ** attempt));
+      }
+    }
+    this.consecutiveFailures += 1;
+    if (this.consecutiveFailures >= env.TEMPLATE_ENGINE_FAILURE_THRESHOLD) this.openedAt = Date.now();
+    const isTimeout = lastError instanceof Error && lastError.name === 'AbortError';
+    const failureMessage = isTimeout
+      ? `Template engine request timed out after ${env.TEMPLATE_ENGINE_TIMEOUT_MS}ms`
+      : 'Template engine request failed';
+    throw Object.assign(new Error(failureMessage, { cause: lastError }), { status: 503 });
+  }
 
   private async request<T>(path: string, init: RequestInit = {}): Promise<T> {
-    const response = await fetch(`${this.baseUrl}${path}`, init);
+    const response = await this.fetchWithResilience(`${this.baseUrl}${path}`, init);
     const contentType = response.headers.get('content-type') || '';
     const payload = contentType.includes('application/json')
       ? await response.json()
@@ -62,78 +102,70 @@ class DocMorphClient {
         typeof payload === 'object' && payload !== null && 'message' in payload
           ? String(payload.message)
           : `DocMorph request failed with status ${response.status}`;
-      const error = new Error(message);
+      const error = new Error(message) as DocMorphError;
       Object.assign(error, { status: response.status, data: payload });
       throw error;
     }
 
-    return normalizeDocMorphUrls(payload as T);
+    return payload as T;
   }
 
-  private async upload<T>(
-    path: string,
-    fieldName: string,
-    file: Express.Multer.File,
-    textFields: Record<string, string> = {}
-  ): Promise<T> {
-    const form = new FormData();
-    const bytes = new Uint8Array(file.buffer.byteLength);
-    bytes.set(file.buffer);
-    form.append(fieldName, new Blob([bytes.buffer], { type: file.mimetype }), file.originalname);
-    for (const [key, value] of Object.entries(textFields)) form.append(key, value);
-    return this.request<T>(path, { method: 'POST', body: form });
+  uploadTemplate(source: SourceAsset, requestId?: string): Promise<TemplateResponse> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (requestId) headers['x-request-id'] = requestId;
+    return this.request<TemplateResponse>('/api/template', { method: 'POST', headers, body: JSON.stringify(source) });
   }
 
-  uploadTemplate(file: Express.Multer.File): Promise<DocMorphResponse> {
-    return this.upload<DocMorphResponse>('/api/template', 'template', file);
+  trainAnalyze(source: SourceAsset, requestId?: string): Promise<TrainingResponse> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (requestId) headers['x-request-id'] = requestId;
+    return this.request<TrainingResponse>('/api/train/analyze', { method: 'POST', headers, body: JSON.stringify(source) });
   }
 
-  uploadRaw(file: Express.Multer.File): Promise<DocMorphResponse> {
-    return this.upload<DocMorphResponse>('/api/raw', 'raw', file);
-  }
-
-  analyzeImage(file: Express.Multer.File, imageName?: string): Promise<DocMorphResponse> {
-    return this.upload<DocMorphResponse>('/api/analyze-image', 'image', file, imageName ? { imageName } : {});
-  }
-
-  trainAnalyze(file: Express.Multer.File): Promise<DocMorphResponse> {
-    return this.upload<DocMorphResponse>('/api/train/analyze', 'filledDoc', file);
-  }
-
-  generateReport(body: GenerateReportRequest): Promise<DocMorphResponse> {
-    return this.request<DocMorphResponse>('/api/generate', {
+  generateReport(body: GenerateReportRequest, requestId?: string): Promise<GenerationResponse> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (requestId) headers['x-request-id'] = requestId;
+    return this.request<GenerationResponse>('/api/generate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
     });
   }
 
-  trainConfirm(body: TrainConfirmRequest): Promise<DocMorphResponse> {
-    return this.request<DocMorphResponse>('/api/train/confirm', {
+  trainConfirm(body: TrainConfirmRequest, requestId?: string): Promise<TrainingResponse> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (requestId) headers['x-request-id'] = requestId;
+    return this.request<TrainingResponse>('/api/train/confirm', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
     });
   }
 
-  generateDiagrams(body: GenerateDiagramsRequest): Promise<DocMorphResponse> {
-    return this.request<DocMorphResponse>('/api/diagrams/generate', {
+  generateDiagrams(body: GenerateDiagramsRequest, requestId?: string): Promise<Record<string, unknown>> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (requestId) headers['x-request-id'] = requestId;
+    return this.request<Record<string, unknown>>('/api/diagrams/generate', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
     });
   }
 
-  refineDiagram(body: RefineDiagramRequest): Promise<DocMorphResponse> {
-    return this.request<DocMorphResponse>('/api/diagrams/refine', {
+  refineDiagram(body: RefineDiagramRequest, requestId?: string): Promise<Record<string, unknown>> {
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (requestId) headers['x-request-id'] = requestId;
+    return this.request<Record<string, unknown>>('/api/diagrams/refine', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(body),
     });
   }
 
-  getHealth(): Promise<DocMorphResponse> {
-    return this.request<DocMorphResponse>('/api/health');
+  getHealth(requestId?: string): Promise<Record<string, unknown>> {
+    const headers: Record<string, string> = {};
+    if (requestId) headers['x-request-id'] = requestId;
+    return this.request<Record<string, unknown>>('/api/health', { headers });
   }
 }
 

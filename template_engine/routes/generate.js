@@ -1,35 +1,29 @@
 import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
 
 import { extractText } from "../services/extractText.js";
 import { extractStructuredData } from "../services/gemini.js";
 import { extractPlaceholders, fillTemplate } from "../services/template.js";
 import { convertToPdf } from "../services/pdf.js";
 import { generateProjectDiagrams, renderMermaidToPng } from "../services/diagrams.js";
+import { downloadRemoteAsset } from "../services/remoteAsset.js";
+import { createEngineKey, putObject, getSignedUrl } from "../services/storage.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const router = express.Router();
 
-const templatesDir = path.join(__dirname, "..", "templates");
-const uploadsDir = path.join(__dirname, "..", "uploads");
-const outputsDir = path.join(__dirname, "..", "outputs");
-
-// POST /api/generate — fills the template with extracted data AND embeds technical diagrams directly into the report
+// POST /api/generate — Stateless generation using memory buffers and Cloudflare R2
 router.post("/generate", async (req, res) => {
-  const { templateFilename, rawFilename, rawText: inlineRawText } = req.body;
+  const { template, raw, rawText: inlineRawText } = req.body;
 
-  if (!templateFilename || (!rawFilename && !inlineRawText)) {
+  if (!template || (!raw && !inlineRawText)) {
     return res.status(400).json({
       error: "Need both templateFilename and project data (file upload or raw text) to generate.",
     });
   }
 
-  const templatePath = path.join(templatesDir, templateFilename);
-
   try {
+    const templateAsset = await downloadRemoteAsset(template);
     // 1. Identify what fields the template needs
-    const fieldNames = await extractPlaceholders(templatePath);
+    const fieldNames = await extractPlaceholders(templateAsset.buffer);
     if (fieldNames.length === 0) {
       return res.status(422).json({
         error:
@@ -40,9 +34,9 @@ router.post("/generate", async (req, res) => {
 
     // 2. Extract raw text from uploaded file or use inline raw text
     let rawText = inlineRawText || "";
-    if (!rawText && rawFilename) {
-      const rawPath = path.join(uploadsDir, rawFilename);
-      rawText = await extractText(rawPath);
+    if (!rawText && raw) {
+      const rawAsset = await downloadRemoteAsset(raw);
+      rawText = await extractText(rawAsset.buffer, rawAsset.filename);
     }
 
     if (!rawText || rawText.trim().length === 0) {
@@ -90,7 +84,9 @@ router.post("/generate", async (req, res) => {
         structuredData = await extractStructuredData(rawText, fieldNames);
       }
     } catch (err) {
+      req.log.error({ err }, "Gemini synthesis failed during report generation");
       return res.status(502).json({
+        success: false,
         error: "Gemini synthesis failed — check GEMINI_API_KEY and try again",
         detail: err.message,
       });
@@ -99,29 +95,43 @@ router.post("/generate", async (req, res) => {
     // 4. Fill the DOCX template with structured text AND embed all diagrams directly
     const stamp = Date.now();
     const docxFilename = `report-${stamp}.docx`;
-    const docxPath = fillTemplate(templatePath, structuredData, renderedDiagramsMap, docxFilename);
+    const docxBuffer = fillTemplate(templateAsset.buffer, structuredData, renderedDiagramsMap);
+    const docxKey = createEngineKey("outputs", docxFilename);
+    await putObject(docxKey, docxBuffer, "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+    const docxUrl = await getSignedUrl(docxKey);
 
     // 5. Convert to PDF if LibreOffice is available
-    let pdfFilename = null;
+    let pdfUrl = null;
+    let pdfKey = null;
+    let pdfSize = null;
     try {
-      const pdfPath = path.join(outputsDir, `report-${stamp}.pdf`);
-      await convertToPdf(docxPath, pdfPath);
-      pdfFilename = path.basename(pdfPath);
+      const pdfBuffer = await convertToPdf(docxBuffer);
+      const pdfFilename = `report-${stamp}.pdf`;
+      pdfKey = createEngineKey("outputs", pdfFilename);
+      pdfSize = pdfBuffer.length;
+      await putObject(pdfKey, pdfBuffer, "application/pdf");
+      pdfUrl = await getSignedUrl(pdfKey);
     } catch (err) {
       console.warn("PDF conversion note:", err.message);
     }
 
     res.json({
+      success: true,
       message: "Academic Black Book & Diagrams Generated Successfully 🔥",
       detectedFields: fieldNames,
       data: structuredData,
       diagrams,
-      docx: `/outputs/${docxFilename}`,
-      pdf: pdfFilename ? `/outputs/${pdfFilename}` : null,
+      docxUrl,
+      pdfUrl,
+      docxKey,
+      pdfKey,
+      docxSize: docxBuffer.length,
+      pdfSize,
     });
   } catch (err) {
     console.error("Generation failed:", err);
     res.status(500).json({
+      success: false,
       error: "Generation failed",
       detail: err.message || String(err),
     });

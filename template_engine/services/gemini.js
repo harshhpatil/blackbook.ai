@@ -1,19 +1,54 @@
-import { GoogleGenAI } from "@google/genai";
-import { safeJsonParse } from "./safeJson.js";
-import { getCachedResult, setCachedResult } from "./cache.js";
+import { GoogleGenAI } from '@google/genai';
+import { safeJsonParse } from './safeJson.js';
+import { getCachedResult, setCachedResult } from './cache.js';
+import { recordGeminiFailure, recordGeminiSuccess } from './geminiStatus.js';
 
-const MODEL = process.env.GEMINI_MODEL || "gemini-3.6-flash";
+const MODEL = process.env.GEMINI_MODEL || 'gemini-3.6-flash';
 
 // Lazy — client is created on first call, not at import time.
-// This guarantees dotenv has already run before the key is read.
+// Supports both Gemini Developer API (GEMINI_API_KEY) and GCP Vertex AI.
 let _ai = null;
-function getClient() {
-  if (!process.env.GEMINI_API_KEY) {
+export function getClient() {
+  if (_ai) return _ai;
+
+  const useVertex =
+    process.env.USE_VERTEX_AI === 'true' ||
+    Boolean(process.env.GOOGLE_CLOUD_PROJECT || process.env.GCP_PROJECT);
+
+  if (useVertex) {
+    const project =
+      process.env.GOOGLE_CLOUD_PROJECT ||
+      process.env.GCP_PROJECT ||
+      process.env.VERTEX_PROJECT_ID;
+    const location =
+      process.env.GOOGLE_CLOUD_LOCATION ||
+      process.env.GCP_LOCATION ||
+      process.env.VERTEX_LOCATION ||
+      'us-central1';
+
+    if (!project) {
+      throw new Error(
+        'Vertex AI requires GOOGLE_CLOUD_PROJECT or GCP_PROJECT to be defined.'
+      );
+    }
+
+    _ai = new GoogleGenAI({
+      vertexai: {
+        project,
+        location,
+      },
+    });
+    return _ai;
+  }
+
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_GEMINI_API_KEY;
+  if (!apiKey) {
     throw new Error(
-      "GEMINI_API_KEY is missing. Add it to server/.env and restart the server."
+      'GEMINI_API_KEY is missing. Add it to .env or configure Vertex AI (GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION).'
     );
   }
-  if (!_ai) _ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
+
+  _ai = new GoogleGenAI({ apiKey });
   return _ai;
 }
 
@@ -35,7 +70,7 @@ Core Principles:
 5. FORMATTING: Return a JSON object with EXACTLY the requested keys. Each key's value should be a clean, ready-to-print string (use newlines for paragraph breaks or bullet points).`;
 
 function buildPrompt(rawText, fieldNames) {
-  const fieldList = fieldNames.map((f) => `- "${f}"`).join("\n");
+  const fieldList = fieldNames.map((f) => `- "${f}"`).join('\n');
   return `TARGET FIELDS TO GENERATE FOR THE BLACK BOOK:
 ${fieldList}
 
@@ -48,47 +83,58 @@ Author comprehensive, high-quality, professional Black Book content for every re
 }
 
 function normalizeFieldValue(val) {
-  if (val === null || val === undefined) return "";
-  if (typeof val === "string") return val.trim();
+  if (val === null || val === undefined) return '';
+  if (typeof val === 'string') return val.trim();
   if (Array.isArray(val)) {
     return val
-      .map((item) => (typeof item === "object" ? JSON.stringify(item) : String(item)))
-      .join("\n");
+      .map((item) =>
+        typeof item === 'object' ? JSON.stringify(item) : String(item)
+      )
+      .join('\n');
   }
-  if (typeof val === "object") {
+  if (typeof val === 'object') {
     return Object.entries(val)
-      .map(([k, v]) => `• ${k}: ${typeof v === "object" ? JSON.stringify(v) : v}`)
-      .join("\n");
+      .map(
+        ([k, v]) => `• ${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`
+      )
+      .join('\n');
   }
   return String(val);
 }
 
-async function callWithRetry(fn, maxRetries = 3, delayMs = 1500) {
+async function callWithRetry(fn, operation, maxRetries = 3, delayMs = 1500) {
   let lastErr;
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      return await fn();
+      const result = await fn();
+      recordGeminiSuccess(result, operation);
+      return result;
     } catch (err) {
       lastErr = err;
+      recordGeminiFailure(err);
       const isRateLimit =
-        err.message?.includes("429") ||
-        err.message?.includes("RESOURCE_EXHAUSTED") ||
+        err.message?.includes('429') ||
+        err.message?.includes('RESOURCE_EXHAUSTED') ||
         err.status === 429;
       const isUnavailable =
-        err.message?.includes("503") ||
-        err.message?.includes("high demand") ||
-        err.message?.includes("UNAVAILABLE") ||
+        err.message?.includes('503') ||
+        err.message?.includes('high demand') ||
+        err.message?.includes('UNAVAILABLE') ||
         err.status === 503;
 
       if ((isRateLimit || isUnavailable) && attempt < maxRetries) {
         // Check for retryDelay in error details
         let wait = delayMs * attempt;
-        const delayMatch = err.message?.match(/retry in ([\d\.]+)s/i) || err.message?.match(/"retryDelay":\s*"(\d+)s"/i);
+        const delayMatch =
+          err.message?.match(/retry in ([\d\.]+)s/i) ||
+          err.message?.match(/"retryDelay":\s*"(\d+)s"/i);
         if (delayMatch) {
           const secs = Math.min(10, Math.ceil(parseFloat(delayMatch[1])));
           wait = secs * 1000;
         }
-        console.warn(`Gemini rate limit / busy (attempt ${attempt}/${maxRetries}), waiting ${Math.round(wait / 1000)}s...`);
+        console.warn(
+          `Gemini rate limit / busy (attempt ${attempt}/${maxRetries}), waiting ${Math.round(wait / 1000)}s...`
+        );
         await new Promise((res) => setTimeout(res, wait));
         continue;
       }
@@ -100,38 +146,40 @@ async function callWithRetry(fn, maxRetries = 3, delayMs = 1500) {
 
 export async function extractStructuredData(rawText, fieldNames) {
   if (!fieldNames || fieldNames.length === 0) {
-    throw new Error("No fields provided — template has no {{placeholders}}");
+    throw new Error('No fields provided — template has no {{placeholders}}');
   }
 
   // Check cache first
-  const cacheKey = `${rawText}_${fieldNames.sort().join(",")}`;
-  const cached = getCachedResult("text_extraction", cacheKey);
+  const cacheKey = `${rawText}_${fieldNames.sort().join(',')}`;
+  const cached = await getCachedResult('text_extraction', cacheKey);
   if (cached) {
     return cached;
   }
 
   const ai = getClient();
-  const response = await callWithRetry(() =>
-    ai.models.generateContent({
-      model: MODEL,
-      contents: buildPrompt(rawText, fieldNames),
-      config: {
-        systemInstruction: SYSTEM_INSTRUCTION,
-        responseMimeType: "application/json",
-        temperature: 0.4,
-      },
-    })
+  const response = await callWithRetry(
+    () =>
+      ai.models.generateContent({
+        model: MODEL,
+        contents: buildPrompt(rawText, fieldNames),
+        config: {
+          systemInstruction: SYSTEM_INSTRUCTION,
+          responseMimeType: 'application/json',
+          temperature: 0.4,
+        },
+      }),
+    'structured_data'
   );
 
   const parsed = safeJsonParse(response.text);
 
   const filtered = {};
   for (const field of fieldNames) {
-    filtered[field] = normalizeFieldValue(parsed[field] ?? "");
+    filtered[field] = normalizeFieldValue(parsed[field] ?? '');
   }
 
   // Cache successful result
-  setCachedResult("text_extraction", cacheKey, filtered);
+  await setCachedResult('text_extraction', cacheKey, filtered);
   return filtered;
 }
 
@@ -146,35 +194,37 @@ export async function extractStructuredData(rawText, fieldNames) {
 export async function analyzeProjectImage(imageBuffer, mimeType, imageName) {
   const ai = getClient();
 
-  const base64Data = imageBuffer.toString("base64");
+  const base64Data = imageBuffer.toString('base64');
 
   const prompt = `You are reviewing a project output image labelled "${imageName}".
 Write a precise, academic, 2-3 sentence summary describing what this image shows, what component or feature it represents, and its significance within the engineering project.
 Be specific about visible UI elements, graphs, diagrams, or results. Do NOT start with "This image shows" — vary your opening.`;
 
-  const response = await callWithRetry(() =>
-    ai.models.generateContent({
-      model: MODEL,
-      contents: [
-        {
-          role: "user",
-          parts: [
-            {
-              inlineData: {
-                mimeType,
-                data: base64Data,
+  const response = await callWithRetry(
+    () =>
+      ai.models.generateContent({
+        model: MODEL,
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                inlineData: {
+                  mimeType,
+                  data: base64Data,
+                },
               },
-            },
-            { text: prompt },
-          ],
+              { text: prompt },
+            ],
+          },
+        ],
+        config: {
+          temperature: 0.4,
+          maxOutputTokens: 300,
         },
-      ],
-      config: {
-        temperature: 0.4,
-        maxOutputTokens: 300,
-      },
-    })
+      }),
+    'image_analysis'
   );
 
-  return (response.text || "").trim();
+  return (response.text || '').trim();
 }
